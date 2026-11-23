@@ -15,7 +15,7 @@ import { fromCm, NewRoomModal, RoomsPanel, RoomStructure, toCm, type Unit } from
 import { floorDataUrl } from './textures'
 import { buildHaven, chaiseSide, officialHavenColors, clampGroup, fabricNames, groupOf, groupSize, havenColors, hvOf, mirrorGroup, resizeModule, rotateGroup, sameGroup, scaleGroup, translate, unionBounds, type Arrangement, type Fabric } from './sofa'
 
-const icons: Record<FurnitureKind,typeof BedDouble>={bed:BedDouble,wardrobe:Box,desk:Monitor,bedside:Table2,dresser:Table2,sofa:Armchair,shelf:Layers3,chair:Armchair,gaming:Gamepad2,haven:Sofa,shoe:Footprints,rug:RectangleHorizontal,custom:Maximize2,'outdoor-sofa':Sofa,'garden-chair':Armchair,'outdoor-table':Table2,lounger:Sun,planter:Sprout,'mirror-rect':RectangleVertical,'mirror-arch':RectangleVertical,'mirror-round':Circle,'mirror-oval':Circle,'mirror-wavy':RectangleVertical,'mirror-organic':Circle,'mirror-vanity':RectangleVertical,'mirror-floor':RectangleVertical,'tv-unit':Tv,'rattan-table':Table2,'lugo-chair':Armchair,'halo-table':Circle}
+const icons: Record<FurnitureKind,typeof BedDouble>={bed:BedDouble,wardrobe:Box,desk:Monitor,bedside:Table2,dresser:Table2,sofa:Armchair,shelf:Layers3,chair:Armchair,gaming:Gamepad2,haven:Sofa,shoe:Footprints,rug:RectangleHorizontal,custom:Maximize2,'outdoor-sofa':Sofa,'garden-chair':Armchair,'outdoor-table':Table2,lounger:Sun,planter:Sprout,'mirror-rect':RectangleVertical,'mirror-arch':RectangleVertical,'mirror-round':Circle,'mirror-oval':Circle,'mirror-wavy':RectangleVertical,'mirror-organic':Circle,'mirror-vanity':RectangleVertical,'mirror-floor':RectangleVertical,'tv-unit':Tv,'tv-stand':Tv,'rattan-table':Table2,'lugo-chair':Armchair,'halo-table':Circle}
 const copy=(p:Project):Project=>structuredClone(p)
 const WALLS:WallName[]=['top','right','bottom','left']
 type SaveState='saved'|'saving'|'error'
@@ -158,7 +158,7 @@ export default function App() {
   useEffect(()=>{if(!selected)setSizeOpen(false)},[selected])
   const checkpoint=()=>{past.current.push(copy(project));if(past.current.length>80)past.current.shift();future.current=[]}
   const update=(fn:(draft:Project)=>void,record=true)=>{if(record)checkpoint();setProject(prev=>{const draft=copy(prev);fn(draft);return draft})}
-  const updateFurniture=(item:Furniture,record=true)=>{const fitted=clampInside(item,project);if(!fitted){setNotice(`${item.name} cannot fit inside the room at that size and angle.`);return false}update(d=>{const l=activeLayout(d);l.furniture=l.furniture.map(f=>f.id===item.id?fitted:f)},record);return true}
+  const updateFurniture=(item:Furniture,record=true)=>{const fitted=clampInside(item,project);if(!fitted){setNotice(`${item.name} cannot fit inside the room at that size and angle.`);return false}const previous=furniture.find(f=>f.id===item.id);if(fitted.kind==='tv-stand'&&previous&&fitted.width!==previous.width&&fitted.screenInches===previous.screenInches)fitted.screenInches=Math.round(65*fitted.width/145);update(d=>{const l=activeLayout(d);l.furniture=l.furniture.map(f=>f.id===item.id?fitted:f)},record);return true}
   const maxSide=Math.max(RW,RD)
   const members=selected?groupOf(selected,furniture):[]
   const grouped=members.length>1
@@ -176,6 +176,10 @@ export default function App() {
       updateMany(fitted);return
     }
     let next={...selected,[key]:value}
+    if(selected.kind==='tv-stand') {
+      if(key==='height') {const screenHeight=Number(value)-(selected.standHeight??27);if(screenHeight<20)return;next={...next,screenHeight,screenInches:Math.round(Math.hypot(next.width,screenHeight)/2.54)}}
+      if(key==='width') next={...next,screenInches:Math.round(Math.hypot(Number(value),selected.screenHeight??84)/2.54)}
+    }
     if((key==='width'||key==='depth'||key==='height')&&selected.kind==='haven') next={...resizeModule(selected,key==='width'?Number(value):selected.width,key==='depth'?Number(value):selected.depth,key==='height'?Number(value):selected.height),x:selected.x,y:selected.y}
     if((key==='width'||key==='depth') && (Number(value)<=0 || Number(value)>maxSide)) return
     if(selected.kind==='rug'&&selected.rugShape==='circle'&&(key==='width'||key==='depth')) next={...next,width:Number(value),depth:Number(value)}
@@ -188,6 +192,7 @@ export default function App() {
   const withOptions=(f:Furniture,o?:AddOptions):Furniture=>{
     if(!o)return f
     let g:Furniture={...f,width:o.width,depth:o.depth,height:o.height}
+    if(f.kind==='tv-stand'){g.screenHeight=Math.max(20,o.height-(f.standHeight??27));g.screenInches=Math.round(Math.hypot(g.width,g.screenHeight)/2.54)}
     if(f.kind==='rug'){g.rugShape=o.rugShape??'rectangle';if(g.rugShape==='circle')g={...g,width:Math.min(g.width,g.depth),depth:Math.min(g.width,g.depth)}}
     if(isMirrorKind(f.kind)&&o.mount){g.mount=o.mount;g.depth=mirrorDepth(o.mount,g.height);if(o.mount!=='wall')g.wall=undefined}
     return g
@@ -337,6 +342,7 @@ export default function App() {
       updateMany(t);return null
     }
     const cand={...resizeModule(selected,w,d,h)}
+    if(cand.kind==='tv-stand'){cand.screenHeight=Math.max(20,h-(cand.standHeight??27));cand.screenInches=Math.round(Math.hypot(w,cand.screenHeight)/2.54)}
     const others=furniture.filter(f=>f.id!==selected.id)
     const res=isSolid(cand)?placeNear(cand,others,project):(()=>{const c=clampInside(cand,project);return c?{item:c,free:true}:null})()
     if(!res)return `At ${w} × ${d} cm, ${selected.name} cannot fit inside the ${RW} × ${RD} cm room at its current angle. Nothing was changed.`
@@ -479,6 +485,11 @@ export default function App() {
             :(selected.kind==='rug'&&selected.rugShape==='circle')||selected.kind==='halo-table'?<NumberField label="Diameter" value={selected.width} min={10} max={maxSide} onChange={v=>updateField('width',v)}/>
             :<><NumberField label="Width" value={selected.width} min={10} max={maxSide} onChange={v=>updateField('width',v)}/><NumberField label="Length" value={selected.depth} min={10} max={maxSide} onChange={v=>updateField('depth',v)}/></>}
             {selected.kind!=='rug'&&!isMirrorKind(selected.kind)&&<NumberField label="Height" value={selected.height} min={1} max={RC} onChange={v=>updateField('height',v)}/>}</div></div>
+          {selected.kind==='tv-stand'&&<div className="field-group"><h3>TV screen & stand</h3><div className="field-grid">
+            <NumberField label="Screen size" value={selected.screenInches??65} min={24} max={120} suffix="in" onChange={inches=>{const width=Math.round(145*inches/65),screenHeight=Math.round(84*inches/65),standHeight=selected.standHeight??27;if(screenHeight+standHeight>RC){setNotice('The TV would be taller than the ceiling.');return}updateFurniture({...selected,width,screenHeight,standHeight,height:screenHeight+standHeight,screenInches:inches})}}/>
+            <NumberField label="Screen height" value={selected.screenHeight??84} min={20} max={RC-(selected.standHeight??27)} onChange={screenHeight=>updateFurniture({...selected,screenHeight,height:screenHeight+(selected.standHeight??27),screenInches:Math.round(Math.hypot(selected.width,screenHeight)/2.54)})}/>
+            <NumberField label="Stand height" value={selected.standHeight??27} min={5} max={RC-(selected.screenHeight??84)} onChange={standHeight=>updateFurniture({...selected,standHeight,height:(selected.screenHeight??84)+standHeight})}/>
+          </div><small className="field-note">Width and length above set the exact screen width and stand footprint.</small></div>}
           {selected.kind==='rug'&&<div className="field-group"><h3>Rug shape & size</h3><Segmented value={selected.rugShape==='circle'?'circle':'rectangle'} options={[{value:'rectangle',label:'Rectangle'},{value:'circle',label:'Circle'}]} onChange={v=>{if(v==='circle')updateFurniture({...selected,rugShape:'circle',width:Math.min(selected.width,selected.depth),depth:Math.min(selected.width,selected.depth)});else updateField('rugShape','rectangle')}}/><div className="rug-presets"><button onClick={()=>rugPreset(200,160)}>200 × 160</button><button onClick={()=>rugPreset(160,230)}>160 × 230</button><button onClick={()=>rugPreset(200,300)}>200 × 300</button></div><small className="field-note">Use the dimension fields above for a custom size.</small></div>}
           {isMirrorKind(selected.kind)&&(()=>{const sp=mirrorSpecs[selected.kind as keyof typeof mirrorSpecs];return <div className="field-group mirror-panel"><h3>Mirror</h3>
             {sp.mounts.length>1&&<><span className="mini-label">Mounting</span><Segmented value={selected.mount??sp.mounts[0]} options={sp.mounts.map(m=>({value:m,label:m==='wall'?'Wall':m==='free'?'Freestanding':'Leaning'}))} onChange={setMount}/></>}

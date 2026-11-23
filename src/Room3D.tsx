@@ -118,6 +118,20 @@ function TVUnit({item}:{item:Furniture}) {
     </group>})}
   </>
 }
+function TVWithStand({item}:{item:Furniture}) {
+  const w=m(item.width),d=m(item.depth),screenH=m(item.screenHeight??84),standH=m(item.standHeight??27)
+  const frame=item.color, faceZ=-d/2+.025, legX=w*.32
+  return <>
+    {/* One thin screen, dark glass face, and a restrained reflected highlight. */}
+    <RoundedBox args={[w,screenH,.035]} radius={.012} smoothness={2} position={[0,standH+screenH/2,faceZ]} castShadow><meshStandardMaterial color={frame} metalness={.35} roughness={.3}/></RoundedBox>
+    <Box size={[w-.025,screenH-.025,.004]} position={[0,standH+screenH/2,faceZ+.02]} color="#102438" roughness={.16}/>
+    <Box size={[w*.32,screenH*.018,.002]} position={[-w*.26,standH+screenH*.8,faceZ+.023]} color="#476b7d" opacity={.38}/>
+    {[-1,1].map(s=><group key={s}>
+      <Box size={[.025,standH,.035]} position={[s*legX,standH/2,faceZ+.008]} color={frame} roughness={.35}/>
+      <Box size={[.19,.018,d*.75]} position={[s*legX,.012,0]} color={frame} roughness={.38}/>
+    </group>)}
+  </>
+}
 function RattanTable({item}:{item:Furniture}) {
   const w=m(item.width),d=m(item.depth),h=m(item.height)
   const grain=useCanvasTex('grain',grainCanvas,[2,1]), cane=useCanvasTex('cane',caneCanvas,[Math.max(1,w/.12),Math.max(1,d/.12)])
@@ -225,6 +239,7 @@ function SceneFurniture({item,roomWidth,roomDepth,sceneKey=''}:{item:Furniture;r
     case 'gaming': body=<GamingChair item={item}/>; break
     case 'haven': body=<HavenModule item={item}/>; break
     case 'tv-unit': body=<TVUnit item={item}/>; break
+    case 'tv-stand': body=<TVWithStand item={item}/>; break
     case 'rattan-table': body=<RattanTable item={item}/>; break
     case 'lugo-chair': body=<LugoChair item={item}/>; break
     case 'halo-table': body=<HaloTable item={item}/>; break

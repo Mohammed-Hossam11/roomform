@@ -4,7 +4,7 @@ import type { MirrorKind } from './parts.ts'
 
 export type FurnitureKind = 'bed' | 'wardrobe' | 'desk' | 'bedside' | 'dresser' | 'sofa' | 'shelf' | 'chair' | 'gaming' | 'haven' | 'shoe' | 'rug' | 'custom'
   | 'outdoor-sofa' | 'garden-chair' | 'outdoor-table' | 'lounger' | 'planter'
-  | MirrorKind | 'tv-unit' | 'rattan-table' | 'lugo-chair' | 'halo-table'
+  | MirrorKind | 'tv-unit' | 'tv-stand' | 'rattan-table' | 'lugo-chair' | 'halo-table'
 export const OUTDOOR_KINDS: FurnitureKind[] = ['outdoor-sofa', 'garden-chair', 'outdoor-table', 'lounger', 'planter']
 export type Material = 'light-wood' | 'walnut' | 'white' | 'grey' | 'black'
 export type FloorMaterial = 'light-oak' | 'natural-oak' | 'walnut' | 'grey-wood' | 'white-marble' | 'beige-tiles' | 'grey-tiles' | 'plain'
@@ -33,6 +33,8 @@ export type Furniture = {
    *  position along it (cm from the wall's first corner) and the bottom edge height. */
   mount?: MirrorMount; wall?: WallName; along?: number; elevation?: number
   frameless?: boolean; led?: boolean; rounded?: boolean
+  /** TV screen dimensions exclude its two-legged floor stand. */
+  screenHeight?: number; standHeight?: number; screenInches?: number
 }
 export type MirrorMount = 'wall' | 'free' | 'lean'
 export type LugoFabric = 'boucle' | 'textured' | 'tweed'
@@ -128,6 +130,7 @@ export const catalog: CatalogItem[] = [
   { kind: 'mirror-vanity', name: 'Vanity mirror', width: 90, depth: 3, height: 70, color: '#efeeea', material: 'white', category: 'Mirrors', extra: { mount: 'wall', rounded: true, led: false } },
   { kind: 'mirror-floor', name: 'Leaning floor mirror', width: 75, depth: 31, height: 180, color: '#b58a5c', material: 'light-wood', category: 'Mirrors', extra: { mount: 'lean' } },
   { kind: 'tv-unit', name: 'Ariika Japanese TV Unit', width: 180, depth: 40, height: 50, color: '#c49a6c', accent: '#d8bd8c', material: 'light-wood', category: 'TV Units', brand: 'Ariika' },
+  { kind: 'tv-stand', name: 'TV with Stand', width: 145, depth: 32, height: 111, color: '#202428', material: 'black', category: 'TV Units', extra: { screenHeight: 84, standHeight: 27, screenInches: 65 } },
   { kind: 'rattan-table', name: 'Ariika Rattan Middle Table', width: 120, depth: 60, height: 42, color: '#c49a6c', accent: '#d8bd8c', material: 'light-wood', category: 'Tables', brand: 'Ariika' },
   { kind: 'lugo-chair', name: 'Ariika Lugo Chair', width: 60, depth: 68, height: 75, color: '#ece7dc', accent: '#d2b089', material: 'light-wood', category: 'Sofas & Seating', brand: 'Ariika', extra: { fabric: 'boucle' } },
   { kind: 'halo-table', name: 'Ariika Halo Side Table', width: 40, depth: 40, height: 51, color: '#d2b089', material: 'light-wood', category: 'Tables', brand: 'Ariika' },
@@ -273,6 +276,11 @@ export function normalizeProject(input:unknown,strict=false):Project {
       if(item.kind==='lugo-chair') item={...item,fabric:raw.fabric==='tweed'||raw.fabric==='textured'?raw.fabric:'boucle',accent:validColor(raw.accent,'#d2b089')}
       if(item.kind==='halo-table') item={...item,depth:item.width}
       if(item.kind==='tv-unit'||item.kind==='rattan-table') item={...item,accent:validColor(raw.accent,'#d8bd8c')}
+      if(item.kind==='tv-stand') {
+        const standHeight=Number.isFinite(raw.standHeight)&&raw.standHeight>0?raw.standHeight:27
+        const screenHeight=Number.isFinite(raw.screenHeight)&&raw.screenHeight>0?raw.screenHeight:Math.max(20,item.height-standHeight)
+        item={...item,standHeight,screenHeight,height:standHeight+screenHeight,screenInches:Number.isFinite(raw.screenInches)&&raw.screenInches>0?raw.screenInches:Math.round(Math.hypot(item.width,screenHeight)/2.54)}
+      }
       const fitted=clampInside(item,project)
       if(!fitted) {
         if(strict)throw new Error(`${item.name} is too large to fit inside the ${width} × ${depth} cm room`)

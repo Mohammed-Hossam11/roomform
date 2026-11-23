@@ -259,6 +259,14 @@ export function FurnitureArt({ item, invalid = false, prefix = 'p' }: { item: Fu
         <path d={`M ${-6} ${d/2 + 2} L 0 ${d/2 + 5} L 6 ${d/2 + 2}`} fill="none" stroke={tint(item.color, .55)} strokeWidth=".8" />
       </>
     } break
+    case 'tv-stand': {
+      // The screen is edge-on in plan view; the two slim feet show its stand depth.
+      detail = <>
+        <rect x={-w/2+2} y={-d/2+2} width={w-4} height={Math.max(3,Math.min(7,d*.2))} rx="1.5" fill="#161d24" stroke="#7f939d" strokeWidth=".6" />
+        <rect x={-w/2+5} y={-d/2+3} width={w-10} height="1.5" fill="#93b5c5" opacity=".75" />
+        {[-1,1].map(s=><g key={s}><rect x={s*w*.32-2} y={-d*.28} width="4" height={d*.68} rx="1" fill="#343b40"/><path d={`M ${s*w*.32-9} ${d/2-2} h 18`} stroke="#20262a" strokeWidth="2.5" strokeLinecap="round"/></g>)}
+      </>
+    } break
     case 'rattan-table': {
       const cane = item.accent ?? '#d8bd8c', r = Math.min(w, d) * .22
       return <g transform={`translate(${item.x} ${item.y}) rotate(${item.rotation})`}>
@@ -355,6 +363,7 @@ export function LibraryPreview({ kind, color = '#26282b', accent }: { kind: stri
   }
   const wood = color, cane = accent ?? '#d8bd8c'
   switch (kind) {
+    case 'tv-stand': return <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden><rect x="2" y="3" width="28" height="19" rx="1.5" fill="#202428" stroke="#626e73" strokeWidth=".8"/><rect x="4" y="5" width="24" height="15" rx=".5" fill="#172c3e"/><path d="M5 18 Q12 8 25 7" stroke="#6f9ab0" strokeOpacity=".65" fill="none"/><path d="M9 22 L7 29 M23 22 L25 29" stroke="#252b2e" strokeWidth="1.7" strokeLinecap="round"/></svg>
     case 'tv-unit': return <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden><rect x="2" y="10" width="28" height="12" rx="1.5" fill={wood}/><rect x="3.5" y="11.5" width="8" height="9" fill={cane}/><rect x="20.5" y="11.5" width="8" height="9" fill={cane}/><rect x="12.5" y="11.5" width="7" height="9" fill="#5a4330"/><line x1="12.5" y1="16" x2="19.5" y2="16" stroke={wood}/><path d="M5 22 L4 27 M27 22 L28 27" stroke={wood} strokeWidth="1.4" strokeLinecap="round"/></svg>
     case 'rattan-table': return <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden><rect x="2" y="11" width="28" height="3" rx="1.5" fill={wood}/><rect x="5" y="19" width="22" height="2.5" rx="1" fill={cane}/><path d="M5 14 V26 M27 14 V26" stroke={wood} strokeWidth="1.8" strokeLinecap="round"/></svg>
     case 'lugo-chair': return <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden><rect x="9" y="5" width="14" height="13" rx="6" fill={color}/><rect x="8" y="16" width="16" height="7" rx="3.5" fill={color}/><path d="M6 12 Q5 20 7 27 M26 12 Q27 20 25 27" stroke={accent ?? '#d2b089'} strokeWidth="2.2" fill="none" strokeLinecap="round"/></svg>
