@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent, type WheelEvent } from 'react'
 import { Copy, Ruler, RotateCw, Trash2 } from 'lucide-react'
 import { activeLayout, type Furniture, type FurnitureKind, type Project } from './model'
-import { bounds, clampInside, distanceToWalls, exterior, inside, interior, isCircular, mountNearest, snapToWalls, warnings } from './geometry'
+import { bounds, clampInside, exterior, inside, interior, isCircular, mountNearest, snapToWalls, warnings } from './geometry'
+import { ALL_INCLUDE, buildDims, DimensionLayer, type MeasureMode } from './measure'
 import { FurnitureArt, FurnitureLabel, PlanDefs, RoomShell } from './PlanArt'
 import { clampGroup, groupOf, isHaven, magnetSnap, resizeModule, translate, unionBounds } from './sofa'
 
 type Props = {
-  project: Project; furniture: Furniture[]; selectedId: string | null; showGrid: boolean; showMeasurements: boolean; snap: boolean
+  project: Project; furniture: Furniture[]; selectedId: string | null; showGrid: boolean; measureMode: MeasureMode; snap: boolean
   onSelect: (id: string | null) => void; onMove: (item: Furniture) => void; onMoveMany: (items: Furniture[]) => void; onCommit: () => void; onAdd: (kind: FurnitureKind, x: number, y: number) => void
   onRotate: () => void; onDuplicate: () => void; onDelete: () => void; onEditSize: () => void; openDoors?: Record<string, boolean>
 }
@@ -203,9 +204,14 @@ export default function FloorPlan(p: Props) {
     e.preventDefault(); const kind = e.dataTransfer.getData('application/roomform') as FurnitureKind
     if (kind) { const pos = point(e.clientX, e.clientY); p.onAdd(kind, pos.x, pos.y) }
   }
-  const r = interior(p.project)
-  const gaps = selected && dragging === 'move' && p.showMeasurements ? distanceToWalls(selected, p.project) : null
-  const sb = selected ? bounds(selected) : null
+  // Live measurements: recomputed from the current geometry on every change
+  // (including each pointer move while dragging, resizing or rotating).
+  const layout = activeLayout(p.project)
+  const dims = useMemo(() => buildDims(p.project, { ...layout, furniture: p.furniture }, {
+    mode: p.measureMode, selectedId: p.selectedId, k, compact: coarse,
+    include: p.measureMode === 'all' ? { ...ALL_INCLUDE, outdoor: !coarse } : { room: true, furniture: true, walls: true, pairs: true, openings: true, outdoor: false },
+    detail: p.measureMode === 'all' || coarse ? 'basic' : 'detailed',
+  }), [p.project, layout, p.furniture, p.measureMode, p.selectedId, k, coarse])
   const ordered = [...p.furniture.filter(f => f.kind === 'rug'), ...p.furniture.filter(f => f.kind !== 'rug')]
   const hr = (coarse ? 7 : 4.5) * k, pad = 3 * k, hit = coarse ? 3.4 : 2.2
   return <div className="plan-wrap" ref={wrap}>
@@ -216,7 +222,7 @@ export default function FloorPlan(p: Props) {
       onKeyDown={e => { if (e.code === 'Space') setSpace(true) }} onKeyUp={e => { if (e.code === 'Space') setSpace(false) }} tabIndex={0}>
       <PlanDefs appearance={appearance} outdoor={p.project.outdoor} />
       <g ref={roomGroup} transform={`translate(${cx + offset.x} ${cy + offset.y}) scale(${zoom}) translate(${-cx} ${-cy})`}>
-        <RoomShell project={p.project} appearance={appearance} showGrid={p.showGrid} showMeasurements={p.showMeasurements} k={k} onBackgroundDown={startPan} openDoors={p.openDoors} />
+        <RoomShell project={p.project} appearance={appearance} showGrid={p.showGrid} showMeasurements={false} k={k} onBackgroundDown={startPan} openDoors={p.openDoors} />
         {ordered.map(item => <g key={item.id} onPointerDown={e => selectDown(e, item)} style={{ cursor: dragging === 'move' && item.id === p.selectedId ? 'grabbing' : 'grab' }}>
           <FurnitureArt item={item} invalid={warnings(item, p.furniture, p.project).length > 0} />
           {isCircular(item)
@@ -235,18 +241,7 @@ export default function FloorPlan(p: Props) {
             <circle data-resize-handle={`${sx}:${sy}`} cx={sx * (selected.width / 2 + pad)} cy={sy * (selected.depth / 2 + pad)} r={hr * hit} fill="transparent" style={{ cursor: `${sx === sy ? 'nwse' : 'nesw'}-resize` }} onPointerDown={e => handleDown(e, selected, sx, sy)} />
           </g>))}
         </g>}
-        {gaps && sb && selected && <g fontSize={10.5 * k} fontWeight={600} fill="#3f6b5e" pointerEvents="none" textAnchor="middle">
-          <g stroke="#3f6b5e" strokeOpacity=".45" strokeWidth={k} strokeDasharray={`${3 * k} ${3 * k}`}>
-            {gaps.left > 0 && <line x1={r.left} x2={sb.minX} y1={selected.y} y2={selected.y} />}
-            {gaps.right > 0 && <line x1={sb.maxX} x2={r.right} y1={selected.y} y2={selected.y} />}
-            {gaps.top > 0 && <line y1={r.top} y2={sb.minY} x1={selected.x} x2={selected.x} />}
-            {gaps.bottom > 0 && <line y1={sb.maxY} y2={r.bottom} x1={selected.x} x2={selected.x} />}
-          </g>
-          {gaps.left > 0 && <text x={(r.left + sb.minX) / 2} y={selected.y - 5 * k}>{gaps.left}</text>}
-          {gaps.right > 0 && <text x={(sb.maxX + r.right) / 2} y={selected.y - 5 * k}>{gaps.right}</text>}
-          {gaps.top > 0 && <text x={selected.x + 5 * k} y={(r.top + sb.minY) / 2} textAnchor="start" dominantBaseline="middle">{gaps.top}</text>}
-          {gaps.bottom > 0 && <text x={selected.x + 5 * k} y={(sb.maxY + r.bottom) / 2} textAnchor="start" dominantBaseline="middle">{gaps.bottom}</text>}
-        </g>}
+        <DimensionLayer dims={dims} k={k} compact={coarse} />
       </g>
     </svg>
     {selected && overlay.tb && !dragging && <div className="floating-toolbar" style={{ left: overlay.tb.x, top: overlay.tb.y }} onPointerDown={e => e.stopPropagation()}>

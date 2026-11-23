@@ -8,6 +8,8 @@ import { activeLayout, activeRoom, catalog, CATEGORIES, frameColors, isMirrorKin
 import { clampInside, doorBlocked, mountNearest, mountOnWall, nextWall, wallFrame, fitOpenings, inside, isSolid, openingIssues, overlaps, placeNear, resizeRoom, warnings } from './geometry'
 import { generateIdeas } from './generator'
 import { export2D, export3D, exportRoomJson, exportStudioJson } from './export'
+import { defaultExportPrefs, ExportDialog, type ExportPrefs } from './ExportDialog'
+import type { MeasureMode } from './measure'
 import { LibraryPreview } from './PlanArt'
 import { fromCm, NewRoomModal, RoomsPanel, RoomStructure, toCm, type Unit } from './Rooms'
 import { floorDataUrl } from './textures'
@@ -119,7 +121,15 @@ export default function App() {
   const importMode=useRef<ImportMode>('project')
   const [selectedId,setSelectedId]=useState<string|null>(null)
   const [view,setView]=useState<'2d'|'3d'>('2d'), [camera,setCamera]=useState<CameraView>('overview'),[viewReset,setViewReset]=useState(0),[openDoors,setOpenDoors]=useState<Record<string,boolean>>({})
-  const [grid,setGrid]=useState(true),[measurements,setMeasurements]=useState(true),[snap,setSnap]=useState(true)
+  const [grid,setGrid]=useState(true),[snap,setSnap]=useState(true)
+  // UI preferences live under their own key so they can never affect saved rooms/designs.
+  const [prefs,setPrefs]=useState<{measureMode:MeasureMode;export:ExportPrefs}>(()=>{
+    try{const p=JSON.parse(localStorage.getItem('roomform-prefs')??'null');if(p&&['off','selected','all'].includes(p.measureMode))return {measureMode:p.measureMode,export:{...defaultExportPrefs,...p.export,include:{...defaultExportPrefs.include,...p.export?.include}}}}catch{/* defaults */}
+    return {measureMode:'selected',export:defaultExportPrefs}
+  })
+  useEffect(()=>{try{localStorage.setItem('roomform-prefs',JSON.stringify(prefs))}catch{/* optional */}},[prefs])
+  const measureMode=prefs.measureMode
+  const [exportOpen,setExportOpen]=useState(false)
   const [toast,setToast]=useState<{message:string;tone:'info'|'success'|'error'}|null>(null),[showExport,setShowExport]=useState(false)
   /** Ordinary feedback is a small toast; pass 'error' for failures. */
   const setNotice=(message:string,tone:'info'|'success'|'error'='info')=>setToast(message?{message,tone}:null)
@@ -307,7 +317,7 @@ export default function App() {
     } catch(err){setNotice(err instanceof Error?`Import failed: ${err.message}`:'Could not import this file.','error')}
   }
   const save=()=>{setSaveState('saving');if(saveStudio(studio)){setSaveState('saved');setNotice(`Saved “${layout.name}” in ${project.name}.`,'success')}else{setSaveState('error');setNotice('This browser could not save. Use Export → Entire project JSON to keep your work.','error')}}
-  const exportAction=async(kind:'2d'|'3d'|'room'|'project')=>{setShowExport(false);if(kind==='2d'){if(!await export2D(project))setNotice('The floor plan image could not be created.')}else if(kind==='room')exportRoomJson(project);else if(kind==='project')exportStudioJson(studio);else if(!export3D(project))setNotice('Open the 3D view before exporting its screenshot.')}
+  const exportAction=async(kind:'2d'|'3d'|'room'|'project')=>{setShowExport(false);if(kind==='2d'||kind==='3d'){setExportOpen(true);return}else if(kind==='room')exportRoomJson(project);else if(kind==='project')exportStudioJson(studio);else if(!export3D(project))setNotice('Open the 3D view before exporting its screenshot.')}
   const selectedWarnings=selected?warnings(selected,furniture,project):[]
   const rotate90=()=>{
     if(!selected)return
@@ -406,7 +416,7 @@ export default function App() {
   const wallColor=(wall:'all'|WallName,color:string)=>update(d=>{const walls=activeLayout(d).appearance.walls;if(wall==='all'){for(const key of ['all','top','right','bottom','left'] as const)walls[key]=color}else walls[wall]=color})
   const floorChange=(material:FloorMaterial)=>update(d=>{const floor=activeLayout(d).appearance.floor;if(floor.material===material)return;floor.baseColor=material==='plain'&&floor.material==='plain'?floor.baseColor:floorPresets[material].color;floor.material=material})
   const rugPreset=(width:number,depth:number)=>{if(!selected||selected.kind!=='rug')return;updateFurniture({...selected,width,depth,rugShape:'rectangle'})}
-  useEffect(()=>{const handler=(e:KeyboardEvent)=>{if(anyDialogOpen()||addDraft||sizeOpen||roomConfirm||roomsOpen||newRoomOpen||wallChange)return;const target=e.target as HTMLElement;if(target.closest('input,textarea,select'))return;if(e.key==='Delete'&&selected){e.preventDefault();remove()}else if(e.key==='Escape'&&selected){setSelectedId(null)}else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();if(e.shiftKey)redo();else undo()}};window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler)})
+  useEffect(()=>{const handler=(e:KeyboardEvent)=>{if(anyDialogOpen()||addDraft||exportOpen||sizeOpen||roomConfirm||roomsOpen||newRoomOpen||wallChange)return;const target=e.target as HTMLElement;if(target.closest('input,textarea,select'))return;if(e.key==='Delete'&&selected){e.preventDefault();remove()}else if(e.key==='Escape'&&selected){setSelectedId(null)}else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();if(e.shiftKey)redo();else undo()}};window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler)})
   const roomDirty=roomDraft.width!==String(fromCm(RW,unit))||roomDraft.depth!==String(fromCm(RD,unit))||roomDraft.ceiling!==String(fromCm(RC,unit))
   const floor=layout.appearance.floor, floorKind=floorPresets[floor.material].kind
   const currentWallColor=layout.appearance.walls[wallTarget]
@@ -436,7 +446,7 @@ export default function App() {
         <ActionButton onClick={redo} title="Redo" disabled={!future.current.length}><Redo2 size={18}/></ActionButton>
         <button className="top-text-button" onClick={save}><Save size={16}/> Save</button>
         <div className="view-switch"><button className={view==='2d'?'active':''} onClick={()=>setView('2d')}><LayoutGrid size={16}/> 2D</button><button className={view==='3d'?'active':''} onClick={()=>setView('3d')}><View size={16}/> 3D</button></div>
-        <div className="export-wrap"><button className="primary-button" onClick={()=>setShowExport(v=>!v)}><Download size={16}/> Export <ChevronDown size={14}/></button>{showExport&&<div className="export-menu"><span className="menu-label">Export</span><button onClick={()=>exportAction('2d')}>Current design as PNG</button><button onClick={()=>exportAction('3d')}>3D screenshot PNG</button><button onClick={()=>exportAction('room')}>Current room as JSON</button><button onClick={()=>exportAction('project')}>Entire project as JSON</button><hr/><span className="menu-label">Import (adds copies)</span><button onClick={()=>startImport('design')}><Upload size={14}/> Import design</button><button onClick={()=>startImport('room')}><Upload size={14}/> Import room</button><button onClick={()=>startImport('project')}><Upload size={14}/> Import complete project</button></div>}</div>
+        <div className="export-wrap"><button className="primary-button" onClick={()=>setShowExport(v=>!v)}><Download size={16}/> Export <ChevronDown size={14}/></button>{showExport&&<div className="export-menu"><span className="menu-label">Export</span><button onClick={()=>exportAction('2d')}>Image (plan, dimensions or 3D)…</button><button onClick={()=>exportAction('room')}>Current room as JSON</button><button onClick={()=>exportAction('project')}>Entire project as JSON</button><hr/><span className="menu-label">Import (adds copies)</span><button onClick={()=>startImport('design')}><Upload size={14}/> Import design</button><button onClick={()=>startImport('room')}><Upload size={14}/> Import room</button><button onClick={()=>startImport('project')}><Upload size={14}/> Import complete project</button></div>}</div>
       </div>
     </header>
     <div className="workspace">
@@ -456,8 +466,8 @@ export default function App() {
         </div>
       </aside>
       <main className="main-area"><div className="canvas-header"><div><span className="eyebrow">{project.name.toUpperCase()} · CURRENT DESIGN</span><h1>{layout.name}</h1><p>{RW} × {RD} cm <span>·</span> ceiling {RC} cm <span>·</span> {furniture.length} furniture items</p></div><div className="canvas-header-actions"><button onClick={renameDesign}>Rename design</button>{view==='3d'&&<div className="camera-switch">{([['overview','3D Overview'],['inside','Inside Room'],['top','Top View'],...(project.outdoor.visible&&project.outdoor.ground!=='none'||Object.values(project.walls).some(w=>w.type!=='solid')?[['exterior','Exterior View'] as const]:[])] as const).map(([v,label])=><button key={v} className={camera===v?'active':''} onClick={()=>{setCamera(v);setViewReset(n=>n+1)}}>{label}</button>)}</div>}</div></div>
-        <div className="canvas-card">{view==='2d'?<FloorPlan project={project} furniture={furniture} selectedId={selectedId} showGrid={grid} showMeasurements={measurements} snap={snap} onSelect={setSelectedId} onMove={item=>updateFurniture(item,false)} onMoveMany={items=>updateMany(items,false)} onCommit={checkpoint} onAdd={(kind,x,y)=>setAddDraft({kind,x,y})} onRotate={rotate90} onDuplicate={duplicate} onDelete={remove} onEditSize={()=>setSizeOpen(true)} openDoors={openDoors}/>:<Room3D project={project} furniture={furniture} mode={camera} resetKey={viewReset} onReset={()=>setViewReset(n=>n+1)} openDoors={openDoors} onToggleDoor={id=>setOpenDoors(o=>({...o,[id]:!o[id]}))} onToggleAll={()=>setOpenDoors(o=>{const any=project.doors.some(d=>o[d.id]);return Object.fromEntries(project.doors.map(d=>[d.id,!any]))})}/>}</div>
-        <div className="canvas-footer">{view==='2d'?<><button className={grid?'enabled':''} onClick={()=>setGrid(v=>!v)}><Grid3X3 size={16}/> Grid</button><button className={snap?'enabled':''} onClick={()=>setSnap(v=>!v)}><Check size={16}/> Snap to grid & walls</button><button className={measurements?'enabled':''} onClick={()=>setMeasurements(v=>!v)}><Maximize2 size={16}/> Measurements</button></>:<span><View size={16}/> Drag to orbit · Scroll to zoom · Right drag to pan</span>}<span className="scale-note">All dimensions in centimeters</span></div>
+        <div className="canvas-card">{view==='2d'?<FloorPlan project={project} furniture={furniture} selectedId={selectedId} showGrid={grid} measureMode={measureMode} snap={snap} onSelect={setSelectedId} onMove={item=>updateFurniture(item,false)} onMoveMany={items=>updateMany(items,false)} onCommit={checkpoint} onAdd={(kind,x,y)=>setAddDraft({kind,x,y})} onRotate={rotate90} onDuplicate={duplicate} onDelete={remove} onEditSize={()=>setSizeOpen(true)} openDoors={openDoors}/>:<Room3D project={project} furniture={furniture} mode={camera} resetKey={viewReset} onReset={()=>setViewReset(n=>n+1)} openDoors={openDoors} onToggleDoor={id=>setOpenDoors(o=>({...o,[id]:!o[id]}))} onToggleAll={()=>setOpenDoors(o=>{const any=project.doors.some(d=>o[d.id]);return Object.fromEntries(project.doors.map(d=>[d.id,!any]))})}/>}</div>
+        <div className="canvas-footer">{view==='2d'?<><button className={grid?'enabled':''} onClick={()=>setGrid(v=>!v)}><Grid3X3 size={16}/> Grid</button><button className={snap?'enabled':''} onClick={()=>setSnap(v=>!v)}><Check size={16}/> Snap to grid & walls</button><div className="measure-switch" role="radiogroup" aria-label="Measurements"><span><Ruler size={15}/> Measurements</span>{(['off','selected','all'] as MeasureMode[]).map(m=><button key={m} role="radio" aria-checked={measureMode===m} className={measureMode===m?'active':''} onClick={()=>setPrefs(p=>({...p,measureMode:m}))}>{m==='off'?'Off':m==='selected'?'Selected':'All'}</button>)}</div></>:<span><View size={16}/> Drag to orbit · Scroll to zoom · Right drag to pan</span>}<span className="scale-note">All dimensions in centimeters</span></div>
       </main>
       <aside className={`sidebar right-sidebar ${panel==='inspector'?'sheet-open':''}`} aria-label={selected?'Furniture properties':'Room settings'}>
         <div className="sheet-head"><span className="sheet-grip"/><strong>{selected?selected.name:'Room settings'}</strong><button onClick={()=>setPanel(null)} aria-label="Close"><X size={18}/></button></div>
@@ -558,8 +568,7 @@ export default function App() {
         </div>
         <span className="menu-label">Export</span>
         <div className="menu-grid">
-          <button onClick={()=>{setPanel(null);exportAction('2d')}}><Download size={15}/> Design PNG</button>
-          <button onClick={()=>{setPanel(null);exportAction('3d')}}><Download size={15}/> 3D PNG</button>
+          <button onClick={()=>{setPanel(null);exportAction('2d')}}><Download size={15}/> Image…</button>
           <button onClick={()=>{setPanel(null);exportAction('room')}}><Download size={15}/> Room JSON</button>
           <button onClick={()=>{setPanel(null);exportAction('project')}}><Download size={15}/> Project JSON</button>
         </div>
@@ -579,6 +588,9 @@ export default function App() {
       <button onClick={()=>{setView(v=>v==='2d'?'3d':'2d');setPanel(null)}}>{view==='2d'?<View size={20}/>:<LayoutGrid size={20}/>}<span>{view==='2d'?'3D view':'2D plan'}</span></button>
     </nav>}
     <input ref={importRef} type="file" accept="application/json,.json" hidden onChange={importJson}/>
+    {exportOpen&&<ExportDialog project={project} prefs={prefs.export} onPrefs={e=>setPrefs(p=>({...p,export:e}))} onClose={()=>setExportOpen(false)}
+      onDownload2D={async e=>{const ok=await export2D(project,{dimensions:e.kind==='dimensioned',include:e.include,detail:e.detail});if(ok)setNotice('Floor plan image downloaded.','success');else setNotice('The floor plan image could not be created.','error');return ok}}
+      onDownload3D={()=>{setExportOpen(false);if(view!=='3d'){setView('3d');setTimeout(()=>{if(!export3D(project))setNotice('Open the 3D view, then export again.','error')},1200)}else if(!export3D(project))setNotice('Open the 3D view before exporting its screenshot.','error')}}/>}
     {addDraft&&<AddFurnitureModal key={addDraft.kind} kind={addDraft.kind} roomName={project.name} maxSide={maxSide} ceiling={RC} preview={LibraryPreview({kind:addDraft.kind,color:catalog.find(c=>c.kind===addDraft.kind)?.color,accent:catalog.find(c=>c.kind===addDraft.kind)?.accent})??(()=>{const Icon=icons[addDraft.kind];return <Icon size={24} strokeWidth={1.6}/>})()} onAdd={addFromDraft} onClose={()=>setAddDraft(null)}/>}
     {sizeOpen&&selected&&<EditSizeModal item={grouped?{...selected,name:'Cloud Haven Sofa',...groupSize(members)}:selected} maxSide={maxSide} ceiling={RC} onApply={applySize} onClose={()=>setSizeOpen(false)}/>}
     {roomConfirm&&<Modal title="Some furniture will overlap" subtitle="The room changed, but not every item could find a free spot." onClose={()=>setRoomConfirm(null)}>
