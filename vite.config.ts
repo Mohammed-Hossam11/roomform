@@ -14,5 +14,5 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig(({ command }) => ({
   base: command === 'serve' ? '/' : (process.env.VITE_BASE || '/roomform/'),
   plugins: [tailwindcss()],
-  build: { outDir: 'dist', emptyOutDir: true, sourcemap: false, chunkSizeWarningLimit: 2000 },
+  build: { outDir: 'dist', emptyOutDir: true, sourcemap: false, chunkSizeWarningLimit: 2000, target: ['es2020', 'safari14'] },
 }))

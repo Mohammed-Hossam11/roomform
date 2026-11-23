@@ -635,7 +635,7 @@ export default function Room3D({project,furniture,mode,resetKey=0,onReset,openDo
   // Mirrors re-capture their reflection when the room's contents or finishes change.
   const sceneKey=useMemo(()=>[furniture.map(f=>`${f.id}:${Math.round(f.x)}:${Math.round(f.y)}:${Math.round(f.rotation)}:${f.color}:${Math.round(f.width)}`).join(','),floor.material,floor.baseColor,JSON.stringify(appearance.walls),mode,JSON.stringify(project.walls),W,D].join('|'),[furniture,floor.material,floor.baseColor,appearance.walls,mode,project.walls,W,D])
   return <div className="three-stage">
-    <Canvas shadows="soft" dpr={[1,2]} gl={{preserveDrawingBuffer:true,antialias:true}} camera={{position:[5.6,4.1,5.8],fov:42,near:.05,far:300}}
+    <Canvas shadows="soft" dpr={COARSE?[1,1.25]:[1,2]} gl={{preserveDrawingBuffer:true,antialias:!COARSE}} camera={{position:[5.6,4.1,5.8],fov:42,near:.05,far:300}}
       onCreated={({gl})=>{gl.toneMapping=THREE.NeutralToneMapping;gl.toneMappingExposure=1}}>
       <color attach="background" args={[outdoorOn?'#dde7ea':'#e9eae6']}/>
       {outdoorOn&&<fog attach="fog" args={['#dde7ea',Math.max(w,d)*3,Math.max(w,d)*7]}/>}

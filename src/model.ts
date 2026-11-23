@@ -1,6 +1,7 @@
 import { clampInside, fitOpenings, interior } from './geometry.ts'
 import { buildHaven, clampGroup, HAVEN, type Fabric, type HavenInfo } from './sofa.ts'
 import type { MirrorKind } from './parts.ts'
+import { clone, uid } from './compat.ts'
 
 export type FurnitureKind = 'bed' | 'wardrobe' | 'desk' | 'bedside' | 'dresser' | 'sofa' | 'shelf' | 'chair' | 'gaming' | 'haven' | 'shoe' | 'rug' | 'custom'
   | 'outdoor-sofa' | 'garden-chair' | 'outdoor-table' | 'lounger' | 'planter'
@@ -102,7 +103,7 @@ export const roomTypes: Record<RoomType,{name:string;width:number;depth:number;c
   custom:{name:'Custom Room',width:500,depth:400,ceiling:270},
 }
 
-export const uid = () => crypto.randomUUID()
+export { uid }
 export const palette: Record<Material, string> = {
   'light-wood': '#cfae83', walnut: '#8b664e', white: '#e8e6e0', grey: '#a6a7a4', black:'#353a3b',
 }
@@ -337,7 +338,7 @@ export function saveStudio(studio: Studio): boolean {
 }
 /** Gives every room/design/item in an imported room fresh ids so it can never collide with existing data. */
 export function freshCopy(room: Project, name?: string): Project {
-  const c: Project = structuredClone(room)
+  const c: Project = clone(room)
   c.id = uid(); if (name) c.name = name; c.updatedAt = Date.now()
   const map = new Map<string, string>()
   for (const l of c.layouts) { const nid = uid(); if (l.id === room.activeLayoutId) c.activeLayoutId = nid; l.id = nid; l.furniture = l.furniture.map(fu => ({ ...fu, id: uid(), groupId: fu.groupId ? (map.get(fu.groupId) ?? (map.set(fu.groupId, uid()), map.get(fu.groupId)!)) : undefined })) }

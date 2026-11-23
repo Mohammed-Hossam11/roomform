@@ -1,4 +1,5 @@
 import type { Furniture } from './model'
+import { uid } from './compat'
 import { bounds, interior, type RoomLike } from './geometry'
 
 /** Cloud Haven modular sofa (visualisation). Overall 320 × 195 × 80 cm:
@@ -14,7 +15,7 @@ export const officialHavenColors = new Set(['Beige', 'Grey', 'Off-white']) // sh
 export const fabricNames = { flatweave: 'Flatweave', tweed: 'Tweed' } as const
 export type Fabric = keyof typeof fabricNames
 
-const id = () => crypto.randomUUID()
+const id = uid
 type Spec = { w: number; d: number; x: number; y: number; type: HavenInfo['type']; armL?: boolean; armR?: boolean; group: number; grouped: boolean; rot?: number }
 
 function specs(a: Arrangement): Spec[] {

@@ -1,5 +1,6 @@
 import { activeLayout, uid, type Furniture, type Layout, type Project } from './model'
 import { bounds, clampInside, doorBlocked, inside, interior, overlaps, snapToWalls } from './geometry'
+import { clone } from './compat'
 
 const positions = [
   { name: 'Window side', bed: [112, 175, 0] },
@@ -81,7 +82,7 @@ export function generateIdeas(project: Project): { layouts: Layout[]; error?: st
     }
     if (!failed) {
       const rugs=source.filter(f=>f.kind==='rug'||f.mount==='wall').map(f=>clampInside({...f,id:uid()},project)).filter((f):f is Furniture=>!!f)
-      if(placed.length+rugs.length===source.length) result.push({id:uid(),name:`Idea ${result.length+1} — ${positions[variant].name}`,furniture:[...rugs,...placed],appearance:structuredClone(current.appearance)})
+      if(placed.length+rugs.length===source.length) result.push({id:uid(),name:`Idea ${result.length+1} — ${positions[variant].name}`,furniture:[...rugs,...placed],appearance:clone(current.appearance)})
     }
   }
   if (!result.length) return { layouts: [], error: 'The current furniture cannot fit around the door with clear gaps. Try reducing an item’s size or removing one.' }

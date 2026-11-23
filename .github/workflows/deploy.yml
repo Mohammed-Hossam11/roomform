@@ -35,10 +35,15 @@ jobs:
 
       - name: Build
         run: npm run build
-        # vite.config.ts builds for the /roomform/ Pages path. If the repository
-        # is ever renamed, set the new path here, e.g.:
-        # env:
-        #   VITE_BASE: /${{ github.event.repository.name }}/
+        env:
+          VITE_BASE: /roomform/
+
+      - name: Check compiled site
+        run: |
+          test -f dist/index.html
+          test -d dist/assets
+          grep -q '/roomform/assets/' dist/index.html
+          ! grep -q '/src/main.tsx' dist/index.html
 
       - name: Configure Pages
         uses: actions/configure-pages@v5

@@ -8,5 +8,26 @@
     <meta name="description" content="Plan, compare, and preview your bedroom layouts in precise centimeters." />
     <title>Roomform — Bedroom Layout Designer</title>
   </head>
-  <body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body>
+  <body>
+    <div id="root"></div>
+    <div id="load-fallback" role="status" style="font:16px system-ui,sans-serif;color:#26372f;max-width:420px;margin:15vh auto;padding:24px;text-align:center">
+      <strong>Loading Roomform…</strong>
+      <p id="load-message" style="line-height:1.5">Opening your room designer.</p>
+      <button id="load-retry" type="button" onclick="location.reload()" style="display:none;padding:12px 18px;border:0;border-radius:9px;background:#365d50;color:#fff;font:inherit">Reload Roomform</button>
+    </div>
+    <script>
+      (function () {
+        function showFailure() {
+          var fallback = document.getElementById('load-fallback');
+          if (!fallback) return;
+          document.getElementById('load-message').textContent = 'Roomform could not start on this browser. Please reload or update your browser.';
+          document.getElementById('load-retry').style.display = 'inline-block';
+        }
+        window.addEventListener('error', function () { if (!document.getElementById('root').hasChildNodes()) showFailure(); }, true);
+        window.addEventListener('unhandledrejection', function () { if (!document.getElementById('root').hasChildNodes()) showFailure(); });
+        setTimeout(showFailure, 12000);
+      }());
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

@@ -1,4 +1,5 @@
 import type { Door, Furniture, FurnitureKind, Project, WallName } from './model'
+import { clone } from './compat'
 
 export type Point = { x: number; y: number }
 // Walls are centered on the nominal room outline (default 9 cm thick), in the
@@ -288,7 +289,7 @@ export function fitOpenings(project: Project): string | null {
  *  position where possible and are otherwise moved to the nearest valid spot. */
 export function resizeRoom(project: Project, room: { width: number; depth: number; ceiling: number }):
   { project: Project; moved: number; overlapping: string[] } | { error: string } {
-  const next: Project = structuredClone(project)
+  const next: Project = clone(project)
   next.room = { ...room }
   const openingError = fitOpenings(next)
   if (openingError) return { error: openingError }
