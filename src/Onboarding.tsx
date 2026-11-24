@@ -29,6 +29,20 @@ const at = (delay: number, dur?: number) => ({ '--d': `${delay}s`, ...(dur ? { '
 /* ------------------------------------------------------------------ *
  *  Welcome splash — shown on every fresh page load (~3 s).
  * ------------------------------------------------------------------ */
+/** The splash (and the invitation after it) plays on the first page load and
+ *  then once every SPLASH_EVERY loads — refreshes and new sessions both count.
+ *  Decided once per page load at module import, so React StrictMode's double
+ *  render cannot advance the counter twice. */
+export const SPLASH_KEY = 'roomform-splash', SPLASH_EVERY = 5
+function decideSplash(): boolean {
+  try {
+    const n = Number(JSON.parse(localStorage.getItem(SPLASH_KEY) || '{}').loads) || 0
+    localStorage.setItem(SPLASH_KEY, JSON.stringify({ loads: n + 1 }))
+    return n % SPLASH_EVERY === 0
+  } catch { return true }
+}
+export const SPLASH_THIS_LOAD = decideSplash()
+
 const SPLASH_MS = 2550, SPLASH_EXIT_MS = 520, SPLASH_REDUCED_MS = 1300
 
 export function WelcomeSplash({ onLeave, onDone }: { onLeave: () => void; onDone: () => void }) {
