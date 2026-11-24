@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent, type WheelEvent } from 'react'
-import { Copy, Ruler, RotateCw, Trash2 } from 'lucide-react'
+import { Copy, Ruler, RotateCw, Trash2, Group, Ungroup } from 'lucide-react'
 import { activeLayout, type Furniture, type FurnitureKind, type Project } from './model'
 import { bounds, clampInside, exterior, inside, interior, isCircular, mountNearest, snapToWalls, warnings, footprintOutline } from './geometry'
 import { ALL_INCLUDE, buildDims, DimensionLayer, type MeasureMode } from './measure'
@@ -10,7 +10,7 @@ type Props = {
   project: Project; furniture: Furniture[]; selectedId: string | null; showGrid: boolean; measureMode: MeasureMode; snap: boolean
   mobile: boolean; editMode: 'move' | 'resize'
   onSelect: (id: string | null) => void; onMove: (item: Furniture) => void; onMoveMany: (items: Furniture[]) => void; onCommit: () => void; onAdd: (kind: FurnitureKind, x: number, y: number) => void
-  onRotate: () => void; onDuplicate: () => void; onDelete: () => void; onEditSize: () => void; openDoors?: Record<string, boolean>
+  onRotate: () => void; onDuplicate: () => void; onDelete: () => void; onEditSize: () => void; groupState?: 'grouped' | 'ungrouped' | null; onToggleGroup?: () => void; openDoors?: Record<string, boolean>
 }
 type DragState =
   | { type: 'move'; id: string; dx: number; dy: number; committed: boolean }
@@ -275,6 +275,7 @@ export default function FloorPlan(p: Props) {
       <button title="Edit size" aria-label="Edit size" onClick={p.onEditSize}><Ruler size={16} strokeWidth={1.8} /></button>
       <button title="Rotate 90°" aria-label="Rotate 90 degrees" onClick={p.onRotate}><RotateCw size={16} strokeWidth={1.8} /></button>
       <button title="Duplicate" aria-label="Duplicate" onClick={p.onDuplicate}><Copy size={16} strokeWidth={1.8} /></button>
+      {p.groupState && <button className="group-toggle" title={p.groupState === 'grouped' ? 'Ungroup sections' : 'Group sections'} aria-label={p.groupState === 'grouped' ? 'Ungroup sections' : 'Group sections'} onClick={p.onToggleGroup}>{p.groupState === 'grouped' ? <Ungroup size={16} strokeWidth={1.8} /> : <Group size={16} strokeWidth={1.8} />}<span>{p.groupState === 'grouped' ? 'Ungroup' : 'Group'}</span></button>}
       <span className="toolbar-sep" />
       <button title="Delete" aria-label="Delete" className="danger" onClick={p.onDelete}><Trash2 size={16} strokeWidth={1.8} /></button>
     </div>}
