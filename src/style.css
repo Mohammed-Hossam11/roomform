@@ -429,3 +429,9 @@ body.dialog-open{overflow:hidden}
   .export-preview{min-height:140px}
   .measure-switch button{padding:7px 10px}
 }
+
+/* ==== Luxury modular wardrobe panel ==== */
+.lux-side{margin-top:12px}.lux-side .field-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.lux-exact{margin-top:10px;display:inline-flex;align-items:center;gap:5px}
+.lux-modal-group{margin-bottom:12px}.lux-modal-group .modal-fields{margin-top:6px}
+@media(max-width:820px){.lux-side .field-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}

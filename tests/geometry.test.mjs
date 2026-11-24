@@ -94,3 +94,17 @@ test('L-shaped wardrobe keeps a sane arm depth through normalisation',()=>{
   assert.ok(out.armDepth<=140 && out.armDepth>=30)
   assertInterior(out)
 })
+
+test('luxury wardrobe sections attach at the corner without colliding',async()=>{
+  const { buildLux, relayoutLux, luxSections } = await import('../src/wardrobe.ts')
+  const set=buildLux(0,0,{lengthA:200,lengthB:160,depth:60,height:240})
+  assert.equal(set.length,3)
+  for(const a of set)for(const b of set)if(a!==b)assert.equal(overlaps(a,b,-.5),false,`${a.name} vs ${b.name}`)
+  const s=luxSections(set)
+  // Side B taller than Side A, then regroup keeps both attached
+  const tall=relayoutLux(set.map(f=>f.id===s.b.id?{...f,height:280,depth:70}:f))
+  const t=luxSections(tall)
+  assert.equal(t.b.height,280); assert.equal(t.a.height,240)
+  assert.equal(t.corner.width,110)
+  for(const a of tall)for(const b of tall)if(a!==b)assert.equal(overlaps(a,b,-.5),false)
+})

@@ -6,7 +6,7 @@ import { clone, uid } from './compat.ts'
 export type FurnitureKind = 'bed' | 'wardrobe' | 'desk' | 'bedside' | 'dresser' | 'sofa' | 'shelf' | 'chair' | 'gaming' | 'haven' | 'shoe' | 'rug' | 'custom' | 'monitor' | 'vase' | 'decor'
   | 'outdoor-sofa' | 'garden-chair' | 'outdoor-table' | 'lounger' | 'planter'
   | MirrorKind | 'tv-unit' | 'tv-stand' | 'rattan-table' | 'lugo-chair' | 'halo-table'
-  | 'wardrobe-l' | 'wardrobe-l-mirror'
+  | 'wardrobe-l' | 'wardrobe-l-mirror' | 'wardrobe-lux'
 export const OUTDOOR_KINDS: FurnitureKind[] = ['outdoor-sofa', 'garden-chair', 'outdoor-table', 'lounger', 'planter']
 export type Material = 'light-wood' | 'walnut' | 'white' | 'grey' | 'black'
 export type FloorMaterial = 'light-oak' | 'natural-oak' | 'walnut' | 'grey-wood' | 'white-marble' | 'beige-tiles' | 'grey-tiles' | 'plain'
@@ -40,10 +40,15 @@ export type Furniture = {
   /** L-shaped corner wardrobes: carcass depth of both arms (cm). `width` is
    *  Side A (along the back), `depth` is Side B (along the left side). */
   armDepth?: number
+  /** Luxury Modular L-Shaped Wardrobe sections (see wardrobe.ts). */
+  lux?: LuxInfo
   /** Optional supporting furniture. Coordinates remain in room centimeters. */
   supportId?: string
 }
 export type MirrorMount = 'wall' | 'free' | 'lean'
+/** One section of the modular luxury wardrobe: the mirrored corner unit or a
+ *  door run (Side A / Side B) with its own door count and shelf column. */
+export type LuxInfo = { part: 'corner' | 'run'; side?: 'A' | 'B'; doors?: number; shelves?: boolean; drawers?: boolean; depthA?: number; depthB?: number }
 export type LugoFabric = 'boucle' | 'textured' | 'tweed'
 export const MIRROR_KINDS: MirrorKind[] = ['mirror-rect', 'mirror-arch', 'mirror-round', 'mirror-oval', 'mirror-wavy', 'mirror-organic', 'mirror-vanity', 'mirror-floor']
 export const isMirrorKind = (k: FurnitureKind): k is MirrorKind => (MIRROR_KINDS as string[]).includes(k)
@@ -118,6 +123,7 @@ export const catalog: CatalogItem[] = [
   { kind: 'bed', name: 'Bed', width: 160, depth: 200, height: 55, color: '#d4b795', material: 'light-wood', category: 'Beds' },
   { kind: 'wardrobe', name: 'Wardrobe', width: 200, depth: 60, height: 230, color: '#b9a18a', material: 'light-wood', category: 'Wardrobes & Storage' },
   { kind: 'wardrobe-l', name: 'L-Shaped Wardrobe', width: 200, depth: 200, height: 240, color: '#e8dfcf', accent: '#9a7552', material: 'light-wood', category: 'Wardrobes & Storage', extra: { armDepth: 60 } },
+  { kind: 'wardrobe-lux', name: 'Luxury Modular L-Shaped Wardrobe', width: 300, depth: 260, height: 240, color: '#e4dbcd', accent: '#5e4433', material: 'light-wood', category: 'Wardrobes & Storage' },
   { kind: 'wardrobe-l-mirror', name: 'L-Shaped Wardrobe with Mirror', width: 200, depth: 200, height: 240, color: '#e8dfcf', accent: '#9a7552', material: 'light-wood', category: 'Wardrobes & Storage', extra: { armDepth: 60 } },
   { kind: 'desk', name: 'Desk', width: 120, depth: 60, height: 75, color: '#b48b68', material: 'walnut', category: 'Desks & Office' },
   { kind: 'bedside', name: 'Bedside table', width: 45, depth: 40, height: 55, color: '#d6b68e', material: 'light-wood', category: 'Tables' },
@@ -278,7 +284,7 @@ export function normalizeProject(input:unknown,strict=false):Project {
         furniture.push(...(clampGroup(mods,project)??mods)); continue
       }
       const kind:FurnitureKind=catalog.some(c=>c.kind===raw.kind)?raw.kind:'custom'
-      const accentKinds:FurnitureKind[]=['gaming',...OUTDOOR_KINDS,'tv-unit','rattan-table','lugo-chair','wardrobe-l','wardrobe-l-mirror']
+      const accentKinds:FurnitureKind[]=['gaming',...OUTDOOR_KINDS,'tv-unit','rattan-table','lugo-chair','wardrobe-l','wardrobe-l-mirror','wardrobe-lux']
       let item:Furniture={...raw,id:typeof raw.id==='string'?raw.id:uid(),kind,name:typeof raw.name==='string'?raw.name:'Furniture',color:validColor(raw.color,'#b8a7a0'),material:palette[raw.material as Material]?raw.material:'grey',height:Number.isFinite(raw.height)&&raw.height>0?raw.height:75,rugShape:kind==='rug'?(raw.rugShape==='circle'?'circle':'rectangle'):undefined,accent:accentKinds.includes(kind)?validColor(raw.accent,catalog.find(c=>c.kind===kind)?.accent??'#3d4046'):undefined,...(kind==='haven'?{hv:{type:raw.hv?.type==='chaise'?'chaise':'seat',armL:!!raw.hv?.armL,armR:!!raw.hv?.armR,back:Number.isFinite(raw.hv?.back)?raw.hv.back:HAVEN.back,arm:Number.isFinite(raw.hv?.arm)?raw.hv.arm:HAVEN.arm},groupId:typeof raw.groupId==='string'?raw.groupId:undefined,grouped:!!raw.grouped,fabric:raw.fabric==='tweed'?'tweed':'flatweave'}:{hv:undefined,groupId:undefined,grouped:undefined,fabric:kind==='lugo-chair'?raw.fabric:undefined})}
       if(item.kind==='rug'&&item.rugShape==='circle') item={...item,width:Math.min(item.width,item.depth),depth:Math.min(item.width,item.depth)}
       if(isMirrorKind(item.kind)){
@@ -289,6 +295,11 @@ export function normalizeProject(input:unknown,strict=false):Project {
       if(item.kind==='halo-table') item={...item,depth:item.width}
       if(item.kind==='wardrobe-l'||item.kind==='wardrobe-l-mirror') item={...item,armDepth:Math.max(30,Math.min(Number.isFinite(raw.armDepth)&&raw.armDepth>0?raw.armDepth:60,Math.min(item.width,item.depth)-10))}
       else item={...item,armDepth:undefined}
+      if(item.kind==='wardrobe-lux'){
+        const l=raw.lux&&typeof raw.lux==='object'?raw.lux:{}, part=l.part==='corner'?'corner':'run'
+        const pos=(v:unknown,d:number)=>typeof v==='number'&&Number.isFinite(v)&&v>0?v:d
+        item={...item,lux:part==='corner'?{part,depthA:pos(l.depthA,60),depthB:pos(l.depthB,60)}:{part,side:l.side==='B'?'B':'A',doors:Number.isInteger(l.doors)&&l.doors>=1&&l.doors<=8?l.doors:undefined,shelves:!!l.shelves,drawers:!!l.drawers}}
+      } else item={...item,lux:undefined}
       if(item.kind==='tv-unit'||item.kind==='rattan-table') item={...item,accent:validColor(raw.accent,'#d8bd8c')}
       if(item.kind==='tv-stand') {
         const standHeight=Number.isFinite(raw.standHeight)&&raw.standHeight>0?raw.standHeight:27

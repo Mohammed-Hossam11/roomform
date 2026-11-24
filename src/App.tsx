@@ -15,11 +15,12 @@ import { export2D, export3D, exportRoomJson, exportStudioJson } from './export'
 import { defaultExportPrefs, ExportDialog, type ExportPrefs } from './ExportDialog'
 import type { MeasureMode } from './measure'
 import { LibraryPreview } from './PlanArt'
+import { buildLux, cornerSize, LUX_DEFAULTS, luxOf, luxSections, relayoutLux } from './wardrobe'
 import { fromCm, NewRoomModal, RoomsPanel, RoomStructure, toCm, type Unit } from './Rooms'
 import { floorDataUrl } from './textures'
 import { buildHaven, chaiseSide, officialHavenColors, clampGroup, fabricNames, groupOf, groupSize, havenColors, hvOf, mirrorGroup, resizeModule, rotateGroup, sameGroup, scaleGroup, translate, unionBounds, type Arrangement, type Fabric } from './sofa'
 
-const icons: Record<FurnitureKind,typeof BedDouble>={bed:BedDouble,wardrobe:Box,'wardrobe-l':Box,'wardrobe-l-mirror':Box,desk:Monitor,bedside:Table2,dresser:Table2,sofa:Armchair,shelf:Layers3,chair:Armchair,gaming:Gamepad2,haven:Sofa,shoe:Footprints,rug:RectangleHorizontal,custom:Maximize2,monitor:Monitor,vase:Circle,decor:Circle,'outdoor-sofa':Sofa,'garden-chair':Armchair,'outdoor-table':Table2,lounger:Sun,planter:Sprout,'mirror-rect':RectangleVertical,'mirror-arch':RectangleVertical,'mirror-round':Circle,'mirror-oval':Circle,'mirror-wavy':RectangleVertical,'mirror-organic':Circle,'mirror-vanity':RectangleVertical,'mirror-floor':RectangleVertical,'tv-unit':Tv,'tv-stand':Tv,'rattan-table':Table2,'lugo-chair':Armchair,'halo-table':Circle}
+const icons: Record<FurnitureKind,typeof BedDouble>={bed:BedDouble,wardrobe:Box,'wardrobe-l':Box,'wardrobe-l-mirror':Box,'wardrobe-lux':Box,desk:Monitor,bedside:Table2,dresser:Table2,sofa:Armchair,shelf:Layers3,chair:Armchair,gaming:Gamepad2,haven:Sofa,shoe:Footprints,rug:RectangleHorizontal,custom:Maximize2,monitor:Monitor,vase:Circle,decor:Circle,'outdoor-sofa':Sofa,'garden-chair':Armchair,'outdoor-table':Table2,lounger:Sun,planter:Sprout,'mirror-rect':RectangleVertical,'mirror-arch':RectangleVertical,'mirror-round':Circle,'mirror-oval':Circle,'mirror-wavy':RectangleVertical,'mirror-organic':Circle,'mirror-vanity':RectangleVertical,'mirror-floor':RectangleVertical,'tv-unit':Tv,'tv-stand':Tv,'rattan-table':Table2,'lugo-chair':Armchair,'halo-table':Circle}
 const Room3D = lazy(() => import('./Room3D'))
 const copy=(p:Project):Project=>clone(p)
 const WALLS:WallName[]=['top','right','bottom','left']
@@ -36,15 +37,20 @@ function AddFurnitureModal({kind,roomName,maxSide,ceiling,preview,onAdd,onClose}
   const c=catalog.find(x=>x.kind===kind)!
   const mirror=isMirrorKind(kind), mounts=mirror?mirrorSpecs[kind as keyof typeof mirrorSpecs].mounts:[]
   const r=(v:number)=>String(Math.round(v*10)/10)
-  const lShape=kind==='wardrobe-l'||kind==='wardrobe-l-mirror'
-  const [vals,setVals]=useState({width:r(c.width),depth:r(c.depth),height:r(c.height),diameter:r(kind==='mirror-round'?c.width:Math.min(c.width,c.depth)),arm:r(c.extra?.armDepth??60)})
+  const lShape=kind==='wardrobe-l'||kind==='wardrobe-l-mirror', lux=kind==='wardrobe-lux'
+  const [vals,setVals]=useState({width:r(lux?LUX_DEFAULTS.lengthA:c.width),depth:r(lux?LUX_DEFAULTS.lengthB:c.depth),height:r(c.height),diameter:r(kind==='mirror-round'?c.width:Math.min(c.width,c.depth)),arm:r(lux?LUX_DEFAULTS.depth:c.extra?.armDepth??60)})
   const [rugShape,setRugShape]=useState<'rectangle'|'circle'>('rectangle')
   const [mount,setMount]=useState<MirrorMount>((c.extra?.mount as MirrorMount)??mounts[0]??'wall')
   const [chaise,setChaise]=useState<'left'|'right'>('right')
   const [error,setError]=useState('')
   type Key=keyof typeof vals
   const round=kind==='mirror-round'||kind==='halo-table'||(kind==='rug'&&rugShape==='circle')
-  const fields:{key:Key;label:string;hint?:string;lo:number;hi:number}[]=lShape?[
+  const fields:{key:Key;label:string;hint?:string;lo:number;hi:number}[]=lux?[
+    {key:'width',label:'Side A length',hint:'Section with shelves and drawers',lo:60,hi:maxSide},
+    {key:'depth',label:'Side B length',hint:'Section with tall doors',lo:60,hi:maxSide},
+    {key:'arm',label:'Depth',hint:'Both sections',lo:35,hi:90},
+    {key:'height',label:'Height',hint:'Change each side later',lo:120,hi:ceiling},
+  ]:lShape?[
     {key:'width',label:'Side A length',hint:'Along the back wall',lo:80,hi:maxSide},
     {key:'depth',label:'Side B length',hint:'Along the side wall',lo:80,hi:maxSide},
     {key:'arm',label:'Wardrobe depth',hint:'Front to back of each side',lo:30,hi:100},
@@ -61,8 +67,9 @@ function AddFurnitureModal({kind,roomName,maxSide,ceiling,preview,onAdd,onClose}
     if(kind==='mirror-round'){width=height=n('diameter')}
     else if(kind==='halo-table'){width=depth=n('diameter')}
     else if(kind==='rug'){height=c.height;if(rugShape==='circle')width=depth=n('diameter')}
+    if(lux&&cornerSize(n('arm'),n('arm'))+Math.max(width,depth)>maxSide){setError('That wardrobe is longer than this room allows.');return}
     if(lShape&&n('arm')>Math.min(width,depth)-20){setError('Wardrobe depth must be at least 20 cm less than the shorter side.');return}
-    const err=onAdd({width,depth,height,rugShape:kind==='rug'?rugShape:undefined,mount:mirror?mount:undefined,chaise:kind==='haven'?chaise:undefined,armDepth:lShape?n('arm'):undefined})
+    const err=onAdd({width,depth,height,rugShape:kind==='rug'?rugShape:undefined,mount:mirror?mount:undefined,chaise:kind==='haven'?chaise:undefined,armDepth:lShape||lux?n('arm'):undefined})
     if(err)setError(err)
   }
   return <Modal title={`${c.name} Dimensions`} subtitle={`Set the size before adding it to ${roomName}.`} onClose={onClose} sheet className="add-modal" leading={preview}>
@@ -74,10 +81,41 @@ function AddFurnitureModal({kind,roomName,maxSide,ceiling,preview,onAdd,onClose}
         {fields.map(f=><label key={f.key} className="modal-field"><span>{f.label} <small>(cm)</small></span><input type="number" inputMode="decimal" step="any" enterKeyHint="done" value={vals[f.key]} onChange={e=>{setVals(v=>({...v,[f.key]:e.target.value}));setError('')}}/>{f.hint&&<em>{f.hint}</em>}</label>)}
       </div>
       {kind==='haven'&&<small className="field-note">Added as grouped Cloud Haven sections, scaled to this overall size.</small>}
+      {lux&&<small className="field-note">Added as three grouped sections (Side A, corner mirror, Side B). Ungroup to move, resize or change the height of each side.</small>}
       {lShape&&<small className="field-note">A corner unit: Side A runs along the back, Side B along the left. Rotate it to fit any corner.</small>}
       {mirror&&mount==='wall'&&<small className="field-note">Hung on the nearest free solid wall — adjust the wall and height after adding.</small>}
       {error&&<div className="modal-error" role="alert"><CircleAlert size={16}/>{error}</div>}
       <div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><Plus size={16}/> Add to Room</button></div>
+    </form>
+  </Modal>
+}
+const luxRunDoors=(f:Furniture)=>luxOf(f).doors??Math.max(1,Math.round((f.width-6-(luxOf(f).shelves?Math.max(40,Math.min(55,Math.round(f.width*.24))):0))/48))
+/** Exact sizes of both wardrobe sides (and the corner height) while grouped. */
+function LuxSizeModal({sections,maxSide,ceiling,onApply,onClose}:{sections:ReturnType<typeof luxSections>;maxSide:number;ceiling:number;onApply:(p:Record<string,Partial<Furniture>>)=>string|null;onClose:()=>void}) {
+  const {a,b,corner}=sections, r=(v?:number)=>String(Math.round((v??0)*10)/10)
+  const [vals,setVals]=useState({aw:r(a?.width),ad:r(a?.depth),ah:r(a?.height),bw:r(b?.width),bd:r(b?.depth),bh:r(b?.height),ch:r(corner?.height)})
+  const [error,setError]=useState('')
+  type K=keyof typeof vals
+  const rows:[string,Furniture|undefined,[K,string,number,number][]][]=[
+    ['Side A · shelves & drawers',a,[['aw','Length',60,maxSide],['ad','Depth',35,90],['ah','Height',120,ceiling]]],
+    ['Side B · tall doors',b,[['bw','Length',60,maxSide],['bd','Depth',35,90],['bh','Height',120,ceiling]]],
+    ['Corner mirror',corner,[['ch','Height',120,ceiling]]],
+  ]
+  const submit=()=>{
+    for(const [,f,fs] of rows)if(f)for(const [k,label,lo,hi] of fs){const v=Number(vals[k]);if(!Number.isFinite(v)||v<lo||v>hi){setError(`${label} must be between ${lo} and ${Math.round(hi)} cm.`);return}}
+    const n=(k:K)=>Number(vals[k]), p:Record<string,Partial<Furniture>>={}
+    if(a)p[a.id]={width:n('aw'),depth:n('ad'),height:n('ah')}
+    if(b)p[b.id]={width:n('bw'),depth:n('bd'),height:n('bh')}
+    if(corner)p[corner.id]={height:n('ch')}
+    const err=onApply(p); if(err)setError(err); else onClose()
+  }
+  return <Modal title="Luxury Wardrobe Sizes" subtitle="Each side keeps its own length, depth and height, in centimeters." onClose={onClose}>
+    <form className="modal-body" onSubmit={e=>{e.preventDefault();submit()}} noValidate>
+      {rows.filter(([,f])=>f).map(([title,,fs])=><div key={title} className="lux-modal-group"><span className="mini-label">{title}</span><div className="modal-fields">
+        {fs.map(([k,label],i)=><label key={k} className="modal-field"><span>{label} <small>(cm)</small></span><input autoFocus={k==='aw'&&i===0} type="number" inputMode="decimal" step="any" value={vals[k]} onChange={e=>{setVals(v=>({...v,[k]:e.target.value}));setError('')}}/></label>)}
+      </div></div>)}
+      {error&&<div className="modal-error" role="alert"><CircleAlert size={16}/>{error}</div>}
+      <div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button">Apply Changes</button></div>
     </form>
   </Modal>
 }
@@ -255,6 +293,21 @@ export default function App() {
   const add=(kind:FurnitureKind,x?:number,y?:number,opts?:AddOptions):string|null=>{
     const label=catalog.find(c=>c.kind===kind)?.name??'This item'
     const noFit=`${label}${opts?` at ${sizeText(opts)}`:''} does not fit inside ${project.name} (${RW} × ${RD} cm). Try smaller dimensions.`
+    if(kind==='wardrobe-lux'){
+      const built=buildLux(0,0,{lengthA:opts?.width,lengthB:opts?.depth,depth:opts?.armDepth,height:opts?.height})
+      if(built.some(f=>f.height>RC))return `${label} is taller than the ${RC} cm ceiling.`
+      const u0=unionBounds(built)
+      let mods=clampGroup(x!==undefined&&y!==undefined?translate(built,x-(u0.minX+u0.maxX)/2,y-(u0.minY+u0.maxY)/2):built,project)
+      if(!mods)return noFit
+      if(x===undefined){
+        const u=unionBounds(mods)
+        search: for(let yy=0;yy<RD;yy+=10)for(let xx=0;xx<RW;xx+=10){const t=clampGroup(translate(mods,xx-u.minX,yy-u.minY),project);if(t&&t.every(m=>!doorBlocked(m,project)&&furniture.every(f=>f.kind==='rug'||!overlaps(m,f,4)))){mods=t;break search}}
+      }
+      const placed=mods
+      update(d=>{activeLayout(d).furniture.push(...placed)});setSelectedId(placed[1]?.id??placed[0].id)
+      if(placed.some(m=>warnings(m,[...furniture,...placed],project).length))setNotice('Wardrobe added. Review the highlighted placement warning.')
+      return null
+    }
     if(kind==='haven'){
       // The Cloud Haven sofa arrives as its L-shaped set of separate sections, grouped.
       let built=buildHaven(opts?.chaise==='left'?'l-left':'l-right',x??RW/2,y??RD/2,0,{color:havenColors.Beige,fabric:'flatweave'})
@@ -328,7 +381,7 @@ export default function App() {
       }
       setNotice('This sofa cannot be duplicated inside the room.');return
     }
-    const proto={...selected,id:uid(),name:`${selected.name} copy`,x:selected.x+25,y:selected.y+25,supportId:undefined}
+    const proto={...selected,id:uid(),name:`${selected.name} copy`,x:selected.x+25,y:selected.y+25,supportId:undefined,...(selected.kind==='wardrobe-lux'?{groupId:undefined,grouped:undefined}:{})}
     const res=isSolid(proto)?placeNear(proto,furniture,project):(()=>{const c=clampInside(proto,project);return c?{item:c,free:true}:null})()
     if(!res){setNotice('This item cannot be duplicated inside the room.');return}
     const item={...res.item,supportId:findSupport(res.item,furniture)?.id}
@@ -420,6 +473,24 @@ export default function App() {
     return null
   }
   const sofaSet=selected?.kind==='haven'?sameGroup(selected,furniture):[]
+  const luxSet=selected?.kind==='wardrobe-lux'?sameGroup(selected,furniture):[]
+  /** Change sections of the luxury wardrobe; grouped sections stay attached at the corner. */
+  const updateLux=(patches:Record<string,Partial<Furniture>>,regroup?:boolean):string|null=>{
+    if(!luxSet.length)return null
+    const isGrouped=regroup??grouped
+    let next=luxSet.map(f=>patches[f.id]?{...f,...patches[f.id]}:f)
+    if(isGrouped)next=relayoutLux(next)
+    const fitted=isGrouped?clampGroup(next,project):next.map(f=>patches[f.id]?clampInside(f,project):f)
+    if(!fitted||fitted.some(f=>!f))return 'That size does not fit inside the room. Nothing was changed.'
+    if(fitted.some(f=>f!.height>RC))return `A section would be taller than the ${RC} cm ceiling.`
+    updateMany(fitted as Furniture[]);return null
+  }
+  const setLuxGrouped=(on:boolean)=>{
+    const patches=Object.fromEntries(luxSet.map(f=>[f.id,{grouped:on}]))
+    const err=updateLux(patches,on); if(err){setNotice(err);return}
+    if(on)setNotice('Sections reconnected at the corner and grouped.')
+  }
+  const luxNum=(v:number,lo:number,hi:number)=>Number.isFinite(v)&&v>=lo&&v<=hi
   const setGrouped=(on:boolean)=>{if(!selected?.groupId)return;const gid=selected.groupId;update(d=>{for(const f of activeLayout(d).furniture)if(f.groupId===gid)f.grouped=on})}
   const sofaLook=(patch:Partial<Pick<Furniture,'color'|'fabric'>>)=>{if(!selected)return;const ids=new Set((sofaSet.length?sofaSet:[selected]).map(f=>f.id));update(d=>{for(const f of activeLayout(d).furniture)if(ids.has(f.id))Object.assign(f,patch)})}
   const setChaise=(side:'left'|'right')=>{if(chaiseSide(sofaSet)===side)return;const t=clampGroup(mirrorGroup(sofaSet),project);if(!t){setNotice('The mirrored sofa does not fit here.');return}updateMany(t)}
@@ -564,12 +635,12 @@ export default function App() {
         <div className="side-heading settings-heading"><span className="eyebrow">INSPECTOR</span><h2>{selected?'Object settings':'Room settings'}</h2><p>{selected?'Edit this item precisely.':`Shared by every design in ${project.name}.`}</p></div>
         {selected?<div className="settings-content"><div className="selected-preview"><span className="selected-icon">{LibraryPreview({kind:selected.kind,color:selected.color,accent:selected.accent})??(()=>{const Icon=icons[selected.kind];return <Icon size={26}/>})()}</span><div><strong>{selected.name}</strong><small>{catalog.find(c=>c.kind===selected.kind)?.name}</small></div></div>
           <label className="text-field"><span>Furniture name</span><input value={selected.name} onChange={e=>updateField('name',e.target.value)}/></label>
-          <div className="field-group"><h3>Dimensions <button className="link-button" onClick={()=>setSizeOpen(true)}><Ruler size={13}/> Exact size</button></h3><div className="field-grid">{selected.kind==='mirror-round'?<NumberField label="Diameter" value={selected.width} min={10} max={RC} onChange={v=>updateField('width',v)}/>
+          {!(selected.kind==='wardrobe-lux'&&grouped)&&<div className="field-group"><h3>Dimensions <button className="link-button" onClick={()=>setSizeOpen(true)}><Ruler size={13}/> Exact size</button></h3><div className="field-grid">{selected.kind==='mirror-round'?<NumberField label="Diameter" value={selected.width} min={10} max={RC} onChange={v=>updateField('width',v)}/>
             :isMirrorKind(selected.kind)?<><NumberField label="Width" value={selected.width} min={10} max={maxSide} onChange={v=>updateField('width',v)}/><NumberField label="Height" value={selected.height} min={10} max={RC} onChange={v=>updateField('height',v)}/></>
             :isLShape(selected)?<><NumberField label="Side A" value={selected.width} min={80} max={maxSide} onChange={v=>updateField('width',v)}/><NumberField label="Side B" value={selected.depth} min={80} max={maxSide} onChange={v=>updateField('depth',v)}/><NumberField label="Wardrobe depth" value={lArm(selected)} min={30} max={Math.min(100,Math.min(selected.width,selected.depth)-20)} onChange={v=>updateField('armDepth',v)}/></>
             :(selected.kind==='rug'&&selected.rugShape==='circle')||selected.kind==='halo-table'?<NumberField label="Diameter" value={selected.width} min={10} max={maxSide} onChange={v=>updateField('width',v)}/>
             :<><NumberField label="Width" value={selected.width} min={10} max={maxSide} onChange={v=>updateField('width',v)}/><NumberField label="Length" value={selected.depth} min={10} max={maxSide} onChange={v=>updateField('depth',v)}/></>}
-            {selected.kind!=='rug'&&!isMirrorKind(selected.kind)&&<NumberField label="Height" value={selected.height} min={1} max={RC} onChange={v=>updateField('height',v)}/>}</div></div>
+            {selected.kind!=='rug'&&!isMirrorKind(selected.kind)&&<NumberField label="Height" value={selected.height} min={1} max={RC} onChange={v=>updateField('height',v)}/>}</div></div>}
           {selected.kind==='tv-stand'&&<div className="field-group"><h3>TV screen & stand</h3><div className="field-grid">
             <NumberField label="Screen size" value={selected.screenInches??65} min={24} max={120} suffix="in" onChange={inches=>{const width=Math.round(145*inches/65),screenHeight=Math.round(84*inches/65),standHeight=selected.standHeight??27;if(screenHeight+standHeight>RC){setNotice('The TV would be taller than the ceiling.');return}updateFurniture({...selected,width,screenHeight,standHeight,height:screenHeight+standHeight,screenInches:inches})}}/>
             <NumberField label="Screen height" value={selected.screenHeight??84} min={20} max={RC-(selected.standHeight??27)} onChange={screenHeight=>updateFurniture({...selected,screenHeight,height:screenHeight+(selected.standHeight??27),screenInches:Math.round(Math.hypot(selected.width,screenHeight)/2.54)})}/>
@@ -603,6 +674,28 @@ export default function App() {
           </div>}
           {selected.mount!=='wall'&&<div className="field-group"><h3>Position <small>center of item</small></h3><div className="field-grid"><NumberField label="X" value={selected.x} min={0} max={RW} onChange={v=>updateField('x',v)}/><NumberField label="Y" value={selected.y} min={0} max={RD} onChange={v=>updateField('y',v)}/></div></div>}
           {selected.mount!=='wall'&&<div className="field-group"><h3>Rotation</h3><div className="rotation-row"><NumberField label="Angle" value={selected.rotation} min={-360} max={360} suffix="°" onChange={v=>updateField('rotation',v)}/><button title="Rotate 90° clockwise" onClick={rotate90}><RotateCw size={17}/></button></div></div>}
+          {selected.kind==='wardrobe-lux'&&(()=>{const secs=luxSections(luxSet), l=luxOf(selected)
+            const side=(f:Furniture|undefined,label:string)=>f&&<div className="lux-side"><span className="mini-label">{label}</span><div className="field-grid">
+              <NumberField label="Length" value={f.width} min={60} max={maxSide} onChange={v=>{if(luxNum(v,60,maxSide)){const e=updateLux({[f.id]:{width:v}});if(e)setNotice(e)}}}/>
+              <NumberField label="Depth" value={f.depth} min={35} max={90} onChange={v=>{if(luxNum(v,35,90)){const e=updateLux({[f.id]:{depth:v}});if(e)setNotice(e)}}}/>
+              <NumberField label="Height" value={f.height} min={120} max={RC} onChange={v=>{if(luxNum(v,120,RC)){const e=updateLux({[f.id]:{height:v}});if(e)setNotice(e)}}}/>
+            </div></div>
+            return <div className="field-group sofa-panel"><h3>Luxury wardrobe <small>{grouped?'sections grouped':'section selected'}</small></h3>
+              {luxSet.length>1&&<><span className="mini-label">Sections</span><Segmented value={grouped?'group':'free'} options={[{value:'group',label:'Group'},{value:'free',label:'Ungroup'}]} onChange={v=>setLuxGrouped(v==='group')}/></>}
+              {grouped&&<>
+                {side(secs.a,'Side A · shelves & drawers')}
+                {side(secs.b,'Side B · tall doors')}
+                {secs.corner&&<div className="lux-side"><span className="mini-label">Corner mirror</span><div className="field-grid"><NumberField label="Height" value={secs.corner.height} min={120} max={RC} onChange={v=>{if(luxNum(v,120,RC)){const e=updateLux({[secs.corner!.id]:{height:v}});if(e)setNotice(e)}}}/></div></div>}
+                <button className="link-button lux-exact" onClick={()=>setSizeOpen(true)}><Ruler size={13}/> Exact sizes of both sides</button>
+              </>}
+              {l.part==='run'&&<>
+                <span className="mini-label">Doors on this section</span>
+                <div className="field-grid"><NumberField label="Doors" suffix="" value={luxRunDoors(selected)} min={1} max={8} onChange={v=>{if(Number.isInteger(v)&&v>=1&&v<=8)updateLux({[selected.id]:{lux:{...l,doors:v}}})}}/></div>
+                <span className="mini-label">End column</span>
+                <div className="segmented"><button className={l.shelves?'active':''} onClick={()=>updateLux({[selected.id]:{lux:{...l,shelves:!l.shelves}}})}>LED shelves</button><button className={l.drawers?'active':''} disabled={!l.shelves} onClick={()=>updateLux({[selected.id]:{lux:{...l,drawers:!l.drawers}}})}>Drawers</button></div>
+              </>}
+              <small className="field-note">{grouped?'Grouped: move and rotate the whole L together; each side keeps its own size and height.':'Ungrouped: move, rotate and resize this section on its own. Drag sections together to snap them, then choose Group to reconnect the L.'}</small>
+            </div>})()}
           {selected.kind==='haven'&&<div className="field-group sofa-panel"><h3>Cloud Haven sofa <small>{grouped?`${members.length} sections grouped`:'section selected'}</small></h3>
             {sofaSet.length>1&&<><span className="mini-label">Sections</span><Segmented value={grouped?'group':'free'} options={[{value:'group',label:'Grouped'},{value:'free',label:'Ungrouped'}]} onChange={v=>setGrouped(v==='group')}/></>}
             {grouped&&chaiseSide(sofaSet)&&<><span className="mini-label">Chaise position</span><Segmented value={chaiseSide(sofaSet)!} options={[{value:'left',label:'Left'},{value:'right',label:'Right'}]} onChange={v=>setChaise(v)}/></>}
@@ -694,7 +787,8 @@ export default function App() {
       onDownload2D={async e=>{const ok=await export2D(project,{dimensions:e.kind==='dimensioned',include:e.include,detail:e.detail});if(ok)setNotice('Floor plan image downloaded.','success');else setNotice('The floor plan image could not be created.','error');return ok}}
       onDownload3D={()=>{setExportOpen(false);if(view!=='3d'){setView('3d');setTimeout(()=>{if(!export3D(project))setNotice('Open the 3D view, then export again.','error')},1200)}else if(!export3D(project))setNotice('Open the 3D view before exporting its screenshot.','error')}}/>}
     {addDraft&&<AddFurnitureModal key={addDraft.kind} kind={addDraft.kind} roomName={project.name} maxSide={maxSide} ceiling={RC} preview={LibraryPreview({kind:addDraft.kind,color:catalog.find(c=>c.kind===addDraft.kind)?.color,accent:catalog.find(c=>c.kind===addDraft.kind)?.accent})??(()=>{const Icon=icons[addDraft.kind];return <Icon size={24} strokeWidth={1.6}/>})()} onAdd={addFromDraft} onClose={()=>setAddDraft(null)}/>}
-    {sizeOpen&&selected&&<EditSizeModal item={grouped?{...selected,name:'Cloud Haven Sofa',...groupSize(members)}:selected} maxSide={maxSide} ceiling={RC} onApply={applySize} onClose={()=>setSizeOpen(false)}/>}
+    {sizeOpen&&selected&&selected.kind==='wardrobe-lux'&&grouped&&<LuxSizeModal sections={luxSections(luxSet)} maxSide={maxSide} ceiling={RC} onApply={updateLux} onClose={()=>setSizeOpen(false)}/>}
+    {sizeOpen&&selected&&!(selected.kind==='wardrobe-lux'&&grouped)&&<EditSizeModal item={grouped?{...selected,name:'Cloud Haven Sofa',...groupSize(members)}:selected} maxSide={maxSide} ceiling={RC} onApply={applySize} onClose={()=>setSizeOpen(false)}/>}
     {roomConfirm&&<Modal title="Some furniture will overlap" subtitle="The room changed, but not every item could find a free spot." onClose={()=>setRoomConfirm(null)}>
       <div className="modal-body"><p className="modal-text">These items stay inside the walls but will overlap other furniture:</p><ul className="modal-list">{roomConfirm.overlapping.map(n=><li key={n}>{n}</li>)}</ul>
         <div className="modal-actions"><button className="ghost-button" onClick={()=>setRoomConfirm(null)}>Cancel</button><button className="primary-button" onClick={()=>commitRoom(roomConfirm.project,roomConfirm.moved)}>Apply Anyway</button></div></div>

@@ -75,6 +75,8 @@ keep the two files in sync.
   `Onboarding.tsx` + `onboarding.css` (splash -> "Take the Tour" invitation on the
   1st load and every 5th after (`SPLASH_EVERY`), 4-step tour;
   tour copy lives in `TOUR_STEPS`, completion flag `roomform-onboarding`),
+  `wardrobe.ts` (Luxury Modular L-Shaped Wardrobe: grouped corner + Side A/B
+  sections, `relayoutLux` reconnects them),
   `style.css` (desktop styles first, then the `@media (max-width:820px)` mobile
   section at the end).
 

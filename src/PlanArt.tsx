@@ -3,6 +3,7 @@ import { floorPresets, isMirrorKind, type Appearance, type Furniture, type Outdo
 import { doorGeometry, exterior, isLShape, lArm, lOutline, wallFrame, wallInset, wallPoint, wallThickness } from './geometry'
 import { deskAccessories, lWardrobeLayout, mirrorOutline, type MirrorKind } from './parts'
 import { hvOf } from './sofa'
+import { isLux, luxCornerOutline, luxOf, luxRunLayout } from './wardrobe'
 import { floorDataUrl, GROUND_CM, groundDataUrl, TILE_CM } from './textures'
 
 export function tint(hex: string, factor: number) {
@@ -184,7 +185,37 @@ function LWardrobePlan({ item, invalid }: { item: Furniture; invalid: boolean })
   </g>
 }
 
+/** Luxury modular wardrobe section, top view. */
+function LuxPlan({ item, invalid }: { item: Furniture; invalid: boolean }) {
+  const walnut = item.accent ?? '#5e4433', stroke = invalid ? '#d0634b' : walnut, sw = invalid ? 1.6 : 1.3
+  const tr = `translate(${item.x} ${item.y}) rotate(${item.rotation})`
+  if (luxOf(item).part === 'corner') {
+    const o = luxCornerOutline(item), mx = (o.mirror.a.x + o.mirror.b.x) / 2, my = (o.mirror.a.y + o.mirror.b.y) / 2
+    const len = Math.hypot(o.mirror.a.x - o.mirror.b.x, o.mirror.a.y - o.mirror.b.y)
+    return <g transform={tr}>
+      <polygon points={o.pts.map(p => `${p.x},${p.y}`).join(' ')} fill={tint(walnut, 1.75)} stroke={stroke} strokeWidth={sw} strokeLinejoin="round" />
+      <line x1={o.mirror.a.x - 2} y1={o.mirror.a.y + 1} x2={o.mirror.b.x + 1} y2={o.mirror.b.y - 2} stroke="#9cc7d4" strokeWidth="4.5" strokeLinecap="round" />
+      <line x1={o.mirror.a.x - 4} y1={o.mirror.a.y + 1} x2={o.mirror.b.x + 1} y2={o.mirror.b.y - 4} stroke="#ffffff" strokeWidth="1" opacity=".8" />
+      {len > 30 && <text transform={`translate(${mx - 9} ${my - 9}) rotate(-45)`} textAnchor="middle" dominantBaseline="middle" fontSize={Math.min(7, len / 7)} fontWeight={700} letterSpacing=".6" fill="#4f7d8d">MIRROR</text>}
+    </g>
+  }
+  const w = item.width, d = item.depth, lay = luxRunLayout(item), band = Math.min(4, d * .08), fy = d / 2
+  const handles = lay.doors.flatMap((dr, i) => i % 2 === 0 && lay.doors[i + 1] ? [dr.b - 3, dr.b + 3] : i % 2 === 0 ? [dr.a + 4] : [])
+  return <g transform={tr}>
+    <rect x={-w / 2} y={-d / 2} width={w} height={d} fill={tint(item.color, .97)} stroke={stroke} strokeWidth={sw} />
+    <rect x={-w / 2 + 1.5} y={-d / 2 + 1.5} width={w - 3} height={d - 3} fill="none" stroke={walnut} strokeOpacity=".35" strokeWidth=".8" />
+    {lay.col && <g>
+      <rect x={lay.col.a} y={-d / 2 + 2} width={lay.col.b - lay.col.a} height={d - band - 3} fill={tint(walnut, 1.6)} stroke={walnut} strokeOpacity=".6" strokeWidth=".7" />
+      {[.3, .55].map(q => <line key={q} x1={lay.col!.a + 3} x2={lay.col!.b - 3} y1={-d / 2 + d * q} y2={-d / 2 + d * q} stroke={walnut} strokeOpacity=".5" strokeWidth=".8" />)}
+      <line x1={lay.col.a + 3} x2={lay.col.b - 3} y1={fy - band - 2.5} y2={fy - band - 2.5} stroke="#f2c46f" strokeWidth="1.6" strokeLinecap="round" />
+    </g>}
+    {lay.doors.map((dr, i) => <rect key={i} x={dr.a + .4} y={fy - band} width={dr.b - dr.a - .8} height={band} fill={tint(item.color, .9)} stroke={walnut} strokeOpacity=".7" strokeWidth=".6" />)}
+    {handles.map((x, i) => <line key={`h${i}`} x1={x} x2={x} y1={fy + 1} y2={fy + 3.5} stroke="#1f1c19" strokeWidth="1.3" strokeLinecap="round" />)}
+  </g>
+}
+
 export function FurnitureArt({ item, invalid = false, prefix = 'p' }: { item: Furniture; invalid?: boolean; prefix?: string }) {
+  if (isLux(item)) return <LuxPlan item={item} invalid={invalid} />
   if (isLShape(item)) return <LWardrobePlan item={item} invalid={invalid} />
   const { width: w, depth: d } = item
   const stroke = invalid ? '#d0634b' : OUTLINE, so = invalid ? .9 : .35, sw = invalid ? 1.6 : 1
@@ -375,6 +406,7 @@ export function FurnitureArt({ item, invalid = false, prefix = 'p' }: { item: Fu
 
 /** Upright, size-aware name label drawn at the item's center. */
 export function FurnitureLabel({ item, k = 1 }: { item: Furniture; k?: number }) {
+  if (isLux(item)) { if (luxOf(item).part === 'corner') return null; item = { ...item, name: `Wardrobe · Side ${luxOf(item).side ?? 'A'}` } }
   if (item.kind === 'rug' || item.kind === 'haven' || item.supportId || item.kind === 'monitor' || item.kind === 'vase' || item.kind === 'decor' || isMirrorKind(item.kind)) return null
   const rot = ((item.rotation % 180) + 180) % 180
   const avail = rot < 10 || rot > 170 ? item.width : Math.abs(rot - 90) < 10 ? item.depth : Math.min(item.width, item.depth)
@@ -403,6 +435,17 @@ export function LibraryPreview({ kind, color = '#26282b', accent }: { kind: stri
     </svg>
   }
   const wood = color, cane = accent ?? '#d8bd8c'
+  if (kind === 'wardrobe-lux') {
+    const wal = accent ?? '#5e4433', door = color
+    return <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden>
+      <rect x="1.5" y="3" width="29" height="26" fill={wal} />
+      <rect x="3" y="4.5" width="8" height="23" fill={door} /><rect x="11.6" y="5.5" width="4.4" height="22" fill="#cfe3ea" />
+      <rect x="16.6" y="4.5" width="6.6" height="23" fill={door} /><rect x="23.8" y="4.5" width="5.2" height="6" fill={door} />
+      <rect x="23.8" y="11" width="5.2" height="9" fill={tint(wal, 1.5)} />{[13.5, 16.8].map(y => <rect key={y} x="23.8" y={y} width="5.2" height=".7" fill="#f2c46f" />)}
+      {[21, 23.3, 25.6].map(y => <rect key={y} x="23.8" y={y} width="5.2" height="1.9" fill={door} />)}
+      <path d="M10.2 12 V21 M17.6 12 V21" stroke="#1f1c19" strokeWidth=".9" strokeLinecap="round" />
+    </svg>
+  }
   if (kind === 'wardrobe-l' || kind === 'wardrobe-l-mirror') {
     const edge = accent ?? '#9a7552', door = color
     return <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden>

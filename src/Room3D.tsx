@@ -8,6 +8,7 @@ import { doorGeometry, exterior, lArm, wallFrame, wallInset, wallThickness } fro
 import { deskAccessories, lWardrobeLayout, mirrorOutline, type MirrorKind } from './parts'
 import { caneCanvas, fabricCanvas, floorCanvas, grainCanvas, GROUND_CM, groundCanvas, TILE_CM, upholsteryCanvas } from './textures'
 import { HAVEN, hvOf } from './sofa'
+import { luxCornerOutline, luxOf, luxRunLayout } from './wardrobe'
 
 const m=(cm:number)=>cm/100
 /** Phones/tablets: lighter shadow maps and mirror reflections, same geometry. */
@@ -289,6 +290,86 @@ function LWardrobe3D({item,sceneKey}:{item:Furniture;sceneKey:string}) {
       </group>})()}
   </>
 }
+/** Luxury modular wardrobe section. Runs: walnut carcass and front frame,
+ *  inset cream doors with long black bar handles, and (Side A) an end column
+ *  with a top cabinet, LED-lit open shelves and drawers. Corner: walnut unit
+ *  with a full-height mirror on its 45° face. Front = +z, back = -z. */
+function LuxSection3D({item,sceneKey}:{item:Furniture;sceneKey:string}) {
+  const walnut=item.accent??'#5e4433', door=item.color, black='#1c1916'
+  const W=m(item.width),D=m(item.depth),H=m(item.height)
+  const corner=luxOf(item).part==='corner'
+  const shape=useMemo(()=>{
+    if(!corner)return null
+    const o=luxCornerOutline(item), sh=new THREE.Shape()
+    o.pts.forEach((p,i)=>i?sh.lineTo(m(p.x),-m(p.y)):sh.moveTo(m(p.x),-m(p.y))); sh.closePath()
+    return {geo:new THREE.ExtrudeGeometry(sh,{depth:H,bevelEnabled:false}),o}
+  },[corner,item.width,item.depth,item.height,item.lux?.depthA,item.lux?.depthB])
+  useEffect(()=>()=>shape?.geo.dispose(),[shape])
+  if(corner&&shape){
+    const {a,b}=shape.o.mirror, ax=m(a.x),az=m(a.y),bx=m(b.x),bz=m(b.y)
+    // outward normal of the mirror face (toward the room, +x/+z in this frame)
+    const len=Math.hypot(bx-ax,bz-az), nl=len||1, nnx=(bz-az)/nl, nnz=(ax-bx)/nl
+    const theta=Math.atan2(nnx,nnz), mw=len-.07, mh=H-.07-.05-.03
+    const cx=(ax+bx)/2+nnx*.003, cz=(az+bz)/2+nnz*.003, cy=.07+.03+mh/2
+    return <group>
+      <mesh geometry={shape.geo} rotation={[-Math.PI/2,0,0]} castShadow receiveShadow><meshStandardMaterial color={walnut} roughness={.55}/></mesh>
+      <CubeCamera key={sceneKey} resolution={COARSE?128:256} frames={1} near={.05} far={60} position={[cx,cy,cz]} rotation={[0,theta,0]}>
+        {(env)=><mesh><planeGeometry args={[mw,mh]}/><meshStandardMaterial envMap={env} color="#eef6f8" metalness={1} roughness={.015} envMapIntensity={1.2}/></mesh>}
+      </CubeCamera>
+    </group>
+  }
+  const lay=luxRunLayout(item), dT=.02, gap=.002, plinth=.07, crown=.04, stile=m(lay.frame), zf=D/2
+  const doorY0=plinth+gap, doorY1=H-crown-gap
+  const handleL=Math.min(1.05,(doorY1-doorY0)*.48), handleY=Math.min(doorY0+.35+handleL/2,(doorY0+doorY1)/2)
+  const handles=lay.doors.flatMap((dr,i)=>i%2===0&&lay.doors[i+1]?[dr.b-3.5,dr.b+3.5]:i%2===0?[dr.a+4.5]:[])
+  const col=lay.col, l=luxOf(item)
+  const topH=Math.max(.4,Math.min(.6,H*.22)), lowH=Math.max(.55,Math.min(.8,H*.3))
+  const nicheY0=plinth+lowH, nicheY1=Math.max(nicheY0+.2,H-crown-topH)
+  const cx0=col?m(col.a):0, cx1=col?m(col.b):0
+  // carcass, leaving the open niche of the shelf column hollow
+  const carcass=col?[
+    {x0:-W/2,x1:cx0,y0:0,y1:H},{x0:cx1,x1:W/2,y0:0,y1:H},
+    {x0:cx0,x1:cx1,y0:0,y1:nicheY0},{x0:cx0,x1:cx1,y0:nicheY1,y1:H},
+  ].filter(r=>r.x1-r.x0>.001&&r.y1-r.y0>.001):[{x0:-W/2,x1:W/2,y0:0,y1:H}]
+  return <>
+    {/* carcass and walnut front frame */}
+    {carcass.map((r,i)=><Box key={`c${i}`} size={[r.x1-r.x0,r.y1-r.y0,D-dT]} position={[(r.x0+r.x1)/2,(r.y0+r.y1)/2,-dT/2]} color={walnut} roughness={.55}/>)}
+    <Box size={[W,crown,dT]} position={[0,H-crown/2,zf-dT/2]} color={walnut} roughness={.5}/>
+    <Box size={[W,plinth,dT]} position={[0,plinth/2,zf-dT/2]} color={shade(walnut,-18)} roughness={.6}/>
+    {[-1,1].map(s=><Box key={s} size={[stile,H,dT]} position={[s*(W/2-stile/2),H/2,zf-dT/2]} color={walnut} roughness={.5}/>)}
+    {/* doors */}
+    {lay.doors.map((dr,i)=><Box key={i} size={[m(dr.b-dr.a)-gap*2,doorY1-doorY0,dT]} position={[m((dr.a+dr.b)/2),(doorY0+doorY1)/2,zf-dT/2+.001]} color={door} roughness={.6}/>)}
+    {handles.map((x,i)=><Box key={`h${i}`} size={[.012,handleL,.016]} position={[m(x),handleY,zf+.009]} color={black} roughness={.3}/>)}
+    {col&&(()=>{
+      const x0=cx0,x1=cx1,cw=x1-x0,cx=(x0+x1)/2
+      const nicheH=nicheY1-nicheY0, shelfN=Math.max(1,Math.round(nicheH/.38))
+      const step=nicheH/shelfN, inner=shade(walnut,14), led='#ffd69a'
+      return <group>
+        {/* open niche: recessed back, walls, shelves with warm LED strips */}
+        <Box size={[cw-.02,nicheH,.012]} position={[cx,nicheY0+nicheH/2,-D/2+.02]} color={inner} roughness={.6}/>
+        {Array.from({length:shelfN+1},(_,k)=>k).map(k=><group key={k}>
+          <Box size={[cw,.022,D-.03]} position={[cx,nicheY0+k*step,0]} color={walnut} roughness={.5}/>
+          {k>0&&<mesh position={[cx,nicheY0+k*step-.014,zf-.05]}><boxGeometry args={[cw-.05,.006,.012]}/><meshStandardMaterial color={led} emissive="#ffc46b" emissiveIntensity={1.6} toneMapped={false}/></mesh>}
+        </group>)}
+        {/* decor: plant, vase, books, box */}
+        {shelfN>=1&&(()=>{const y=nicheY0+(shelfN>=2?step:0)+.011;return <group>
+          <Cyl r={.05} r2={.04} h={.1} position={[cx+cw*.18,y+.05,-.02]} color="#e8e2d6" roughness={.5}/>
+          {[0,1,2,3,4].map(i=><mesh key={i} position={[cx+cw*.18+Math.cos(i*1.3)*.05,y+.13+(i%2)*.03,-.02+Math.sin(i*1.3)*.05]} castShadow><sphereGeometry args={[.045,10,8]}/><meshStandardMaterial color={['#5f8a4f','#6f9a5a','#4f7a45'][i%3]} roughness={.9}/></mesh>)}
+          <Cyl r={.035} r2={.05} h={.16} position={[cx-cw*.22,y+.08,-.03]} color="#f1ede6" roughness={.35}/>
+        </group>})()}
+        <Box size={[cw*.55,.09,.2]} position={[cx,nicheY0+.056,-.03]} color="#e9e2d5" roughness={.8}/>
+        {[0,1,2].map(b=><Box key={b} size={[cw*.38,.022,.15]} position={[cx-cw*.05,nicheY0+(shelfN>=2?step:0)+.022+b*.024+.011,.02]} color={['#ddd3c2','#efe9df','#c9b9a1'][b]} roughness={.8}/>)}
+        {/* top cabinet */}
+        <Box size={[cw-gap*2,topH-gap*2,dT]} position={[cx,H-crown-topH/2,zf-dT/2+.001]} color={door} roughness={.6}/>
+        {/* drawers (or a low door) */}
+        {(l.drawers?[0,1,2]:[0]).map((k,_i,arr)=>{const h=lowH/arr.length;return <group key={`dr${k}`}>
+          <Box size={[cw-gap*2,h-gap*3,dT]} position={[cx,plinth+h*(k+.5),zf-dT/2+.001]} color={door} roughness={.6}/>
+          <Box size={[cw*.62,.008,.012]} position={[cx,plinth+h*(k+1)-.02,zf+.006]} color={black} roughness={.35}/>
+        </group>})}
+      </group>
+    })()}
+  </>
+}
 function SceneFurniture({item,roomWidth,roomDepth,sceneKey='',supportHeight=0,hasMonitor=false}:{item:Furniture;roomWidth:number;roomDepth:number;sceneKey?:string;supportHeight?:number;hasMonitor?:boolean}) {
   const w=m(item.width),d=m(item.depth),h=m(item.height)
   const x=m(item.x-roomWidth/2),z=m(item.y-roomDepth/2)
@@ -302,6 +383,7 @@ function SceneFurniture({item,roomWidth,roomDepth,sceneKey='',supportHeight=0,ha
     case 'tv-unit': body=<TVUnit item={item}/>; break
     case 'tv-stand': body=<TVWithStand item={item}/>; break
     case 'wardrobe-l': case 'wardrobe-l-mirror': body=<LWardrobe3D item={item} sceneKey={sceneKey}/>; break
+    case 'wardrobe-lux': body=<LuxSection3D item={item} sceneKey={sceneKey}/>; break
     case 'monitor': body=<>
       <Box size={[w*.3,.012,d*.72]} position={[0,.006,d*.08]} color="#4b5358"/>
       <Box size={[.025,h*.27,.025]} position={[0,h*.135,0]} color="#596268"/>

@@ -50,14 +50,27 @@ export function lArm(f: Pick<Furniture,'width'|'depth'|'armDepth'>) { return Mat
 /** The solid parts of an item's footprint as rotated rectangles in room cm:
  *  two plain arms for an L, otherwise the item itself. Used for collisions
  *  and door-swing checks so the empty corner of the L stays usable. */
+/** The luxury wardrobe's mirrored corner unit: solid along its back and left,
+ *  open in front of the 45° mirror face. */
+export const isLuxCornerItem = (f: Furniture) => f.kind === 'wardrobe-lux' && f.lux?.part === 'corner'
+export const hasLFootprint = (f: Furniture) => isLShape(f) || isLuxCornerItem(f)
 export function footprintParts(f: Furniture): Furniture[] {
-  if (!isLShape(f)) return [f]
-  const t = lArm(f), a = f.rotation * Math.PI / 180, c = Math.cos(a), s = Math.sin(a)
+  if (!hasLFootprint(f)) return [f]
+  const lux = isLuxCornerItem(f)
+  const tA = lux ? Math.min(f.lux?.depthA ?? 60, f.depth - 10) : lArm(f), tB = lux ? Math.min(f.lux?.depthB ?? 60, f.width - 10) : lArm(f)
+  const a = f.rotation * Math.PI / 180, c = Math.cos(a), s = Math.sin(a)
   const at = (lx: number, ly: number) => ({ x: f.x + lx * c - ly * s, y: f.y + lx * s + ly * c })
   return [
-    { ...f, kind: 'custom', ...at(0, -f.depth / 2 + t / 2), width: f.width, depth: t },                        // back arm (Side A)
-    { ...f, kind: 'custom', ...at(-f.width / 2 + t / 2, t / 2), width: t, depth: Math.max(1, f.depth - t) },     // side arm (Side B)
+    { ...f, kind: 'custom', lux: undefined, ...at(0, -f.depth / 2 + tA / 2), width: f.width, depth: tA },                                 // back arm (Side A)
+    { ...f, kind: 'custom', lux: undefined, ...at(-f.width / 2 + tB / 2, tA / 2), width: tB, depth: Math.max(1, f.depth - tA) },          // side arm (Side B)
   ]
+}
+/** The true outline in the item's local frame, for hit areas. */
+export function footprintOutline(f: Furniture): Point[] | null {
+  if (isLShape(f)) return lOutline(f)
+  if (!isLuxCornerItem(f)) return null
+  const h = f.width / 2, tA = Math.min(f.lux?.depthA ?? 60, f.depth - 10), tB = Math.min(f.lux?.depthB ?? 60, f.width - 10)
+  return [{ x: -h, y: -h }, { x: h, y: -h }, { x: h, y: -h + tA }, { x: -h + tB, y: h }, { x: -h, y: h }]
 }
 /** Outline of the true footprint in the item's local frame (cm). */
 export function lOutline(f: Pick<Furniture,'width'|'depth'|'armDepth'>): Point[] {
@@ -93,7 +106,7 @@ function circleHits(c: Furniture, o: Furniture, gap: number) {
   return Math.hypot(lx - qx, ly - qy) < r
 }
 export function overlaps(a: Furniture, b: Furniture, gap = 0): boolean {
-  if (isLShape(a) || isLShape(b)) return footprintParts(a).some(pa => footprintParts(b).some(pb => overlaps(pa, pb, gap)))
+  if (hasLFootprint(a) || hasLFootprint(b)) return footprintParts(a).some(pa => footprintParts(b).some(pb => overlaps(pa, pb, gap)))
   if (isCircular(a)) return circleHits(a, b, gap)
   if (isCircular(b)) return circleHits(b, a, gap)
   const aa = corners(a), bb = corners(b)
@@ -192,7 +205,7 @@ export function doorGeometry(project: Project, door: Door) {
   }
 }
 function edgeSamples(f: Furniture): Point[] {
-  if (isLShape(f)) return footprintParts(f).flatMap(edgeSamples)
+  if (hasLFootprint(f)) return footprintParts(f).flatMap(edgeSamples)
   const pts = corners(f), out: Point[] = [...pts, { x: f.x, y: f.y }]
   for (let i=0;i<4;i++) for (let t=1;t<10;t++) { const p=pts[i], q=pts[(i+1)%4]; out.push({ x:p.x+(q.x-p.x)*t/10, y:p.y+(q.y-p.y)*t/10 }) }
   return out
