@@ -429,3 +429,9 @@ body.dialog-open{overflow:hidden}
   .export-preview{min-height:140px}
   .measure-switch button{padding:7px 10px}
 }
+
+/* ==== Reality Mode entry button (desktop 3D view) ==== */
+.reality-button{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 15px;border:1px solid #284c3e;border-radius:10px;background:linear-gradient(135deg,#335a4b,#1e392f);color:#f5efe0;font:700 12.5px Manrope,sans-serif;letter-spacing:.01em;white-space:nowrap;box-shadow:0 8px 18px -10px #1e392fb3,inset 0 1px 0 #ffffff24;transition:filter .2s,transform .2s}
+.reality-button svg{color:#d6e6c8}
+.reality-button:hover{filter:brightness(1.1);transform:translateY(-1px)}
+.reality-button:focus-visible{outline:3px solid #9fc09d;outline-offset:2px}
