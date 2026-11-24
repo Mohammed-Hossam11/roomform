@@ -20,7 +20,7 @@ export function RoomThumb({ room }: { room: Project }) {
   return <svg className="room-thumb" viewBox={`${l - pad} ${t - pad} ${r - l + pad * 2} ${b - t + pad * 2}`} preserveAspectRatio="xMidYMid meet" aria-hidden>
     <PlanDefs appearance={layout.appearance} prefix={prefix} outdoor={room.outdoor} />
     <RoomShell project={room} appearance={layout.appearance} showGrid={false} showMeasurements={false} k={Math.max(r - l, b - t) / 200} prefix={prefix} />
-    {[...layout.furniture.filter(f => f.kind === 'rug'), ...layout.furniture.filter(f => f.kind !== 'rug')].map(f => <FurnitureArt key={f.id} item={f} prefix={prefix} />)}
+    {[...layout.furniture.filter(f => f.kind === 'rug'), ...layout.furniture.filter(f => f.kind !== 'rug' && !f.supportId), ...layout.furniture.filter(f => f.kind !== 'rug' && f.supportId)].map(f => <FurnitureArt key={f.id} item={f} prefix={prefix} />)}
   </svg>
 }
 const fmtDate = (t: number) => new Date(t).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })

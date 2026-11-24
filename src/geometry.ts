@@ -82,6 +82,37 @@ export function overlaps(a: Furniture, b: Furniture, gap = 0) {
   }
   return true
 }
+const SURFACES: Partial<Record<FurnitureKind, FurnitureKind[]>> = {
+  'tv-stand': ['tv-unit'],
+  monitor: ['desk', 'tv-unit', 'dresser'],
+  vase: ['desk', 'bedside', 'dresser', 'shelf', 'tv-unit', 'rattan-table', 'halo-table', 'outdoor-table'],
+  decor: ['desk', 'bedside', 'dresser', 'shelf', 'tv-unit', 'rattan-table', 'halo-table', 'outdoor-table'],
+}
+export const isEligibleSupport = (item: Furniture, support: Furniture) => item.id !== support.id && !!SURFACES[item.kind]?.includes(support.kind)
+/** The complete rotated object footprint must fit on the usable upper surface. */
+export function canSupport(item: Furniture, support: Furniture): boolean {
+  if (!isEligibleSupport(item, support) || support.height <= 0) return false
+  const a = -support.rotation * Math.PI / 180, c = Math.cos(a), s = Math.sin(a)
+  const margin = 1.5
+  return corners(item).every(p => {
+    const dx = p.x - support.x, dy = p.y - support.y
+    const x = dx * c - dy * s, y = dx * s + dy * c
+    return isCircular(support)
+      ? Math.hypot(x, y) <= Math.min(support.width, support.depth) / 2 - margin
+      : Math.abs(x) <= support.width / 2 - margin && Math.abs(y) <= support.depth / 2 - margin
+  })
+}
+export function findSupport(item: Furniture, furniture: Furniture[]): Furniture | undefined {
+  return furniture.filter(other => canSupport(item.kind === 'tv-stand' && item.supportId !== other.id ? { ...item, rotation: other.rotation + 180 } : item, other))
+    .sort((a, b) => b.height - a.height || Math.hypot(item.x - a.x, item.y - a.y) - Math.hypot(item.x - b.x, item.y - b.y))[0]
+}
+/** Keep children in the same local position when their supporting item moves. */
+export function followSupport(child: Furniture, before: Furniture, after: Furniture): Furniture {
+  const old = -before.rotation * Math.PI / 180, next = after.rotation * Math.PI / 180
+  const dx = child.x - before.x, dy = child.y - before.y
+  const lx = dx * Math.cos(old) - dy * Math.sin(old), ly = dx * Math.sin(old) + dy * Math.cos(old)
+  return { ...child, x: after.x + lx * Math.cos(next) - ly * Math.sin(next), y: after.y + lx * Math.sin(next) + ly * Math.cos(next), rotation: child.rotation + after.rotation - before.rotation }
+}
 /** Solid items collide; rugs and wall-mounted mirrors are not floor furniture. */
 export const isSolid = (f: Furniture) => f.kind !== 'rug' && f.mount !== 'wall'
 const WALL_ORDER: WallName[] = ['top', 'right', 'bottom', 'left']
@@ -122,7 +153,7 @@ export function nextWall(f: Furniture, project: RoomLike): WallName | null {
 }
 export function collides(f: Furniture, all: Furniture[], gap = 0) {
   // A 0.5 cm tolerance lets snapped sections and furniture sit flush without warnings.
-  return isSolid(f) && all.some(o => o.id !== f.id && isSolid(o) && overlaps(f, o, gap - .5))
+  return isSolid(f) && all.some(o => o.id !== f.id && isSolid(o) && f.supportId !== o.id && o.supportId !== f.id && overlaps(f, o, gap - .5))
 }
 
 /** Hinge, closed-leaf direction and swing side of a door, in room coordinates. */
@@ -309,10 +340,15 @@ export function resizeRoom(project: Project, room: { width: number; depth: numbe
       if (dx || dy) moved += members.length
       placed.push(...members.map(f => ({ ...f, x: f.x + dx, y: f.y + dy })))
     }
-    const ordered = [...layout.furniture].filter(f => !(f.grouped && f.groupId)).sort((a, b) => Number(isSolid(b)) - Number(isSolid(a)))
+    const ordered = [...layout.furniture].filter(f => !(f.grouped && f.groupId)).sort((a, b) => Number(isSolid(b)) - Number(isSolid(a)) || Number(!!a.supportId) - Number(!!b.supportId))
     for (const item of ordered) {
       if (item.height > room.ceiling) return { error: `${item.name} in “${layout.name}” is ${Math.round(item.height)} cm tall — higher than the ${room.ceiling} cm ceiling.` }
-      const res = isSolid(item) ? placeNear(item, placed, next) : (() => { const c = clampInside(item, next); return c ? { item: c, free: true } : null })()
+      const beforeSupport=item.supportId?layout.furniture.find(f=>f.id===item.supportId):undefined
+      const afterSupport=item.supportId?placed.find(f=>f.id===item.supportId):undefined
+      if (afterSupport && item.height + afterSupport.height > room.ceiling) return { error: `${item.name} on ${afterSupport.name} would exceed the ${room.ceiling} cm ceiling.` }
+      const attached=beforeSupport&&afterSupport?followSupport(item,beforeSupport,afterSupport):undefined
+      const candidate=attached&&canSupport(attached,afterSupport!)&&inside(attached,next)?attached:{...item,supportId:undefined}
+      const res=attached&&candidate===attached?{item:attached,free:!collides(attached,placed)}:isSolid(candidate)?placeNear(candidate,placed,next):(()=>{const c=clampInside(candidate,next);return c?{item:c,free:true}:null})()
       if (!res) return { error: `${item.name} in “${layout.name}” (${Math.round(item.width)} × ${Math.round(item.depth)} cm) cannot fit in a ${room.width} × ${room.depth} cm room.` }
       if (Math.abs(res.item.x - item.x) > .01 || Math.abs(res.item.y - item.y) > .01) moved++
       if (!res.free && !collides(item, layout.furniture)) overlapping.push(`${item.name} (${layout.name})`)

@@ -1,6 +1,6 @@
 import type { Furniture, Layout, Project, WallName } from './model'
 import { WALL_NAMES } from './model'
-import { corners, exterior, interior, isCircular, isSolid, overlaps, wallFrame, wallPoint, type Point } from './geometry'
+import { bounds, corners, exterior, interior, isCircular, isSolid, overlaps, wallFrame, wallPoint, type Point } from './geometry'
 
 /** Shared measurement system: computes annotations from the actual room and
  *  furniture geometry (cm), and renders them as SVG. Used by the live 2D
@@ -100,6 +100,7 @@ export function buildDims(project: Project, layout: Layout, o: MeasureOptions): 
   const dims: Dim[] = [], k = o.k, inc = o.include
   const { width: W, depth: D } = project.room
   const ents = entities(layout.furniture)
+  const important = new Set([...ents].sort((a,b)=>b.items.reduce((sum,f)=>sum+f.width*f.depth,0)-a.items.reduce((sum,f)=>sum+f.width*f.depth,0)).slice(0,4).map(e=>e.id))
   const sel = o.selectedId ? ents.find(e => e.ids.includes(o.selectedId!)) ?? null : null
   const selItem = o.selectedId ? layout.furniture.find(f => f.id === o.selectedId) : undefined
   // ---- architecture
@@ -141,7 +142,7 @@ export function buildDims(project: Project, layout: Layout, o: MeasureOptions): 
   for (const e of targets) {
     const isSel = e === sel
     // sizes
-    if (inc.furniture && (isSel || o.mode === 'all')) {
+    if (inc.furniture && (isSel || (o.mode === 'all' && (o.detail === 'detailed' || important.has(e.id))))) {
       const shown = isSel && selItem && e.items.length > 1 ? [selItem] : e.items
       for (const f of shown) {
         const P = footprint(f), maxY = Math.max(...P.map(p => p.y)), cx = P.reduce((s, p) => s + p.x, 0) / P.length
@@ -153,9 +154,9 @@ export function buildDims(project: Project, layout: Layout, o: MeasureOptions): 
     }
     if (!e.solid && !isSel) continue
     // wall clearances
-    if (inc.walls) {
+    if (inc.walls && (o.mode !== 'all' || o.detail === 'detailed' || isSel)) {
       const g = wallGaps(e, project)
-      const sides: WallName[] = (isSel && (o.detail === 'detailed' || o.mode === 'selected')) || (o.mode === 'all' && o.detail === 'detailed' && !o.compact && !o.selectedId) ? ['left', 'right', 'top', 'bottom'] : [g.left.d <= g.right.d ? 'left' : 'right', g.top.d <= g.bottom.d ? 'top' : 'bottom']
+      const sides: WallName[] = o.detail === 'detailed' && !o.compact ? ['left', 'right', 'top', 'bottom'] : [g.left.d <= g.right.d ? 'left' : 'right', g.top.d <= g.bottom.d ? 'top' : 'bottom']
       for (const s of sides) { const m = g[s]; if (m.d > .5) dims.push({ kind: 'wall', x1: m.x1, y1: m.y1, x2: m.x2, y2: m.y2, label: fmt(m.d), accent: isSel, priority: isSel ? 90 : 30 }) }
     }
   }
@@ -164,6 +165,7 @@ export function buildDims(project: Project, layout: Layout, o: MeasureOptions): 
     const solid = ents.filter(e => e.solid)
     const pairs = new Set<string>()
     const add = (A: Entity, B: Entity, accent: boolean, maxD: number) => {
+      if (A.items.some(a => B.items.some(b => a.supportId === b.id || b.supportId === a.id))) return
       const key = [A.id, B.id].sort().join('|'); if (pairs.has(key)) return
       const c = entityClearance(A, B)
       if (c.overlap) { pairs.add(key); dims.push({ kind: 'overlap', x1: c.p.x, y1: c.p.y, x2: c.p.x, y2: c.p.y, textOnly: true, warn: true, label: 'Overlap', priority: 98 }); return }
@@ -173,7 +175,7 @@ export function buildDims(project: Project, layout: Layout, o: MeasureOptions): 
     if (sel?.solid) solid.filter(e => e !== sel).map(e => ({ e, d: entityClearance(sel, e).d })).sort((a, b) => a.d - b.d).slice(0, o.detail === 'detailed' ? 4 : 3).forEach(({ e }) => add(sel, e, true, 300))
     if (o.mode === 'all') for (const A of solid) {
       const near = solid.filter(B => B !== A).map(B => ({ B, d: entityClearance(A, B).d })).sort((a, b) => a.d - b.d)[0]
-      if (near) add(A, near.B, false, o.detail === 'detailed' ? 250 : 150)
+      if (near && (o.detail === 'detailed' || pairs.size < 3)) add(A, near.B, false, o.detail === 'detailed' ? 250 : 150)
     }
   }
   return dims
@@ -181,8 +183,9 @@ export function buildDims(project: Project, layout: Layout, o: MeasureOptions): 
 
 /** Greedy label layout: higher-priority labels win; colliding ones are nudged
  *  along their line, then dropped (still inspectable by selecting the item). */
-function layoutLabels(dims: Dim[], k: number, fs: number, compact: boolean) {
+function layoutLabels(dims: Dim[], k: number, fs: number, compact: boolean, furniture: Furniture[]) {
   const placed: { x: number; y: number; w: number; h: number }[] = []
+  const obstacles = furniture.filter(f=>f.kind!=='rug').map(f=>{const b=bounds(f),pad=3*k;return{x:b.minX-pad,y:b.minY-pad,w:b.maxX-b.minX+pad*2,h:b.maxY-b.minY+pad*2}})
   const out: (Dim & { lx: number; ly: number; vertical: boolean })[] = []
   const sorted = [...dims].sort((a, b) => b.priority - a.priority)
   for (const d of sorted) {
@@ -190,39 +193,39 @@ function layoutLabels(dims: Dim[], k: number, fs: number, compact: boolean) {
     const w = (d.label.length * fs * .56 + 6 * k), h = fs + 4 * k
     const len = Math.hypot(d.x2 - d.x1, d.y2 - d.y1)
     if (!d.textOnly && len < (vertical ? h : w) * .55 && compact && !d.accent) continue
-    const tries = d.textOnly ? [0, 1, -1, 2] : [0, .25, -.25, .4, -.4]
+    const tries = d.textOnly ? [0, 1, -1, 2, -2, 3, -3, 4, -4] : [0, .22, -.22, .4, -.4]
     let ok: { x: number; y: number } | null = null
     for (const t of tries) {
       const x = d.textOnly ? d.x1 : (d.x1 + d.x2) / 2 + (d.x2 - d.x1) * t, y = d.textOnly ? d.y1 + t * h * 1.1 : (d.y1 + d.y2) / 2 + (d.y2 - d.y1) * t
       const bw = vertical ? h : w, bh = vertical ? w : h
       const box = { x: x - bw / 2, y: y - bh / 2, w: bw, h: bh }
-      if (!placed.some(p => box.x < p.x + p.w && p.x < box.x + box.w && box.y < p.y + p.h && p.y < box.y + box.h)) { ok = { x, y }; placed.push(box); break }
+      const hits = (p:{x:number;y:number;w:number;h:number})=>box.x < p.x + p.w && p.x < box.x + box.w && box.y < p.y + p.h && p.y < box.y + box.h
+      if (!placed.some(hits) && !obstacles.some(hits)) { ok = { x, y }; placed.push(box); break }
     }
-    if (!ok) { if (d.priority < 80) continue; ok = { x: d.textOnly ? d.x1 : (d.x1 + d.x2) / 2, y: d.textOnly ? d.y1 : (d.y1 + d.y2) / 2 } }
+    if (!ok) continue
     out.push({ ...d, lx: ok.x, ly: ok.y, vertical })
   }
   return out
 }
 
-const INK = { muted: '#7d8780', accent: '#2f7a62', warn: '#c2493c', room: '#5f6b63' }
-/** Architectural dimension lines with end ticks and haloed centimetre labels. */
-export function DimensionLayer({ dims, k, compact = false }: { dims: Dim[]; k: number; compact?: boolean }) {
-  const fs = (compact ? 10 : 10.5) * k
-  const items = layoutLabels(dims, k, fs, compact)
+const INK = { muted: '#89938d', accent: '#4f7866', warn: '#bb6758', room: '#65766b' }
+/** Fine architectural rules and labels shared by live plan and PNG export. */
+export function DimensionLayer({ dims, k, compact = false, furniture = [] }: { dims: Dim[]; k: number; compact?: boolean; furniture?: Furniture[] }) {
+  const fs = (compact ? 9 : 9.5) * k
+  const items = layoutLabels(dims, k, fs, compact, furniture)
   return <g className="dimension-layer" pointerEvents="none" fontFamily="'DM Sans', Arial, sans-serif">
     {items.map((d, i) => {
       const color = d.warn ? INK.warn : d.accent ? INK.accent : d.kind === 'room' ? INK.room : INK.muted
-      if (d.textOnly) return <text key={i} x={d.lx} y={d.ly} textAnchor="middle" dominantBaseline="middle" fontSize={fs} fontWeight={d.accent || d.warn ? 700 : 600} fill={color} stroke="#fbfbf8" strokeWidth={fs * .32} paintOrder="stroke" strokeLinejoin="round">{d.warn ? `⚠ ${d.label}` : d.label}</text>
+      if (d.textOnly) return <g key={i}><rect x={d.lx-(d.label.length*fs*.29+4*k)} y={d.ly-fs*.7} width={d.label.length*fs*.58+8*k} height={fs*1.4} rx={2*k} fill="#fbfaf7" fillOpacity=".94"/><text x={d.lx} y={d.ly} textAnchor="middle" dominantBaseline="middle" fontSize={fs} fontWeight={d.accent || d.warn ? 650 : 500} fill={color}>{d.warn ? `⚠ ${d.label}` : d.label}</text></g>
       const len = Math.hypot(d.x2 - d.x1, d.y2 - d.y1) || 1, nx = -(d.y2 - d.y1) / len, ny = (d.x2 - d.x1) / len, t = 4 * k
-      const sw = (d.accent ? 1.1 : .85) * k
+      const sw = (d.accent ? .85 : .65) * k
       const angle = d.vertical ? -90 : 0
       return <g key={i}>
-        <line x1={d.x1} y1={d.y1} x2={d.x2} y2={d.y2} stroke={color} strokeOpacity={d.accent ? .9 : .6} strokeWidth={sw} />
+        <line x1={d.x1} y1={d.y1} x2={d.x2} y2={d.y2} stroke={color} strokeOpacity={d.accent ? .8 : .55} strokeWidth={sw} />
         {[[d.x1, d.y1], [d.x2, d.y2]].map(([x, y], j) => <g key={j}>
           <line x1={x - nx * t} y1={y - ny * t} x2={x + nx * t} y2={y + ny * t} stroke={color} strokeOpacity={d.accent ? .9 : .65} strokeWidth={sw} />
-          <line x1={x - (nx + (d.x2 - d.x1) / len * (j ? 1 : -1)) * t * .6} y1={y - (ny + (d.y2 - d.y1) / len * (j ? 1 : -1)) * t * .6} x2={x + (nx + (d.x2 - d.x1) / len * (j ? 1 : -1)) * t * .6} y2={y + (ny + (d.y2 - d.y1) / len * (j ? 1 : -1)) * t * .6} stroke={color} strokeOpacity={d.accent ? .9 : .65} strokeWidth={sw} />
         </g>)}
-        <text x={d.lx} y={d.ly} transform={angle ? `rotate(${angle} ${d.lx} ${d.ly})` : undefined} textAnchor="middle" dominantBaseline="middle" fontSize={fs} fontWeight={d.accent ? 700 : 600} fill={color} stroke="#fbfbf8" strokeWidth={fs * .34} paintOrder="stroke" strokeLinejoin="round">{d.label}</text>
+        <g transform={angle ? `rotate(${angle} ${d.lx} ${d.ly})` : undefined}><rect x={d.lx-(d.label.length*fs*.29+4*k)} y={d.ly-fs*.7} width={d.label.length*fs*.58+8*k} height={fs*1.4} rx={2*k} fill="#fbfaf7" fillOpacity=".94"/><text x={d.lx} y={d.ly} textAnchor="middle" dominantBaseline="middle" fontSize={fs} fontWeight={d.accent ? 650 : 500} fill={color}>{d.label}</text></g>
       </g>
     })}
   </g>

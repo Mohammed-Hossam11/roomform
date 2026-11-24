@@ -212,7 +212,8 @@ export default function FloorPlan(p: Props) {
     include: p.measureMode === 'all' ? { ...ALL_INCLUDE, outdoor: !coarse } : { room: true, furniture: true, walls: true, pairs: true, openings: true, outdoor: false },
     detail: p.measureMode === 'all' || coarse ? 'basic' : 'detailed',
   }), [p.project, layout, p.furniture, p.measureMode, p.selectedId, k, coarse])
-  const ordered = [...p.furniture.filter(f => f.kind === 'rug'), ...p.furniture.filter(f => f.kind !== 'rug')]
+  const ordered = [...p.furniture.filter(f => f.kind === 'rug'), ...p.furniture.filter(f => f.kind !== 'rug' && !f.supportId), ...p.furniture.filter(f => f.kind !== 'rug' && f.supportId)]
+  const support = selected?.supportId ? p.furniture.find(f => f.id === selected.supportId) : undefined
   const hr = (coarse ? 7 : 4.5) * k, pad = 3 * k, hit = coarse ? 3.4 : 2.2
   return <div className="plan-wrap" ref={wrap}>
     <svg ref={svg} viewBox={`${vb.l - PAD} ${vb.t - PAD} ${vb.r - vb.l + PAD * 2} ${vb.b - vb.t + PAD * 2}`} preserveAspectRatio="xMidYMid meet" className="plan-svg" role="img" aria-label="Interactive bedroom floor plan"
@@ -223,6 +224,7 @@ export default function FloorPlan(p: Props) {
       <PlanDefs appearance={appearance} outdoor={p.project.outdoor} />
       <g ref={roomGroup} transform={`translate(${cx + offset.x} ${cy + offset.y}) scale(${zoom}) translate(${-cx} ${-cy})`}>
         <RoomShell project={p.project} appearance={appearance} showGrid={p.showGrid} showMeasurements={false} k={k} onBackgroundDown={startPan} openDoors={p.openDoors} />
+        {support&&<rect x={-support.width/2-3*k} y={-support.depth/2-3*k} width={support.width+6*k} height={support.depth+6*k} rx={5*k} transform={`translate(${support.x} ${support.y}) rotate(${support.rotation})`} fill="#6a9b76" fillOpacity=".07" stroke="#6a9b76" strokeOpacity=".65" strokeWidth={1.2*k} strokeDasharray={`${4*k} ${3*k}`} pointerEvents="none"/>}
         {ordered.map(item => <g key={item.id} onPointerDown={e => selectDown(e, item)} style={{ cursor: dragging === 'move' && item.id === p.selectedId ? 'grabbing' : 'grab' }}>
           <FurnitureArt item={item} invalid={warnings(item, p.furniture, p.project).length > 0} />
           {isCircular(item)
@@ -241,7 +243,7 @@ export default function FloorPlan(p: Props) {
             <circle data-resize-handle={`${sx}:${sy}`} cx={sx * (selected.width / 2 + pad)} cy={sy * (selected.depth / 2 + pad)} r={hr * hit} fill="transparent" style={{ cursor: `${sx === sy ? 'nwse' : 'nesw'}-resize` }} onPointerDown={e => handleDown(e, selected, sx, sy)} />
           </g>))}
         </g>}
-        <DimensionLayer dims={dims} k={k} compact={coarse} />
+        <DimensionLayer dims={dims} k={k} compact={coarse} furniture={p.furniture} />
       </g>
     </svg>
     {selected && overlay.tb && !dragging && <div className="floating-toolbar" style={{ left: overlay.tb.x, top: overlay.tb.y }} onPointerDown={e => e.stopPropagation()}>

@@ -35,14 +35,14 @@ export function renderPlan(project:Project,o:PlanExportOptions,scale=1):Promise<
   const margin=(o.dimensions?dimMargin(o.include,k):26*k)+24*k
   const vx=L-margin, vy=T-margin, vw=R-L+margin*2, vh=B-T+margin*2
   const dims=o.dimensions?buildDims(project,layout,{mode:'all',include:o.include,detail:o.detail,k}):[]
-  const ordered=[...layout.furniture.filter(f=>f.kind==='rug'),...layout.furniture.filter(f=>f.kind!=='rug')]
+  const ordered=[...layout.furniture.filter(f=>f.kind==='rug'),...layout.furniture.filter(f=>f.kind!=='rug'&&!f.supportId),...layout.furniture.filter(f=>f.kind!=='rug'&&f.supportId)]
   const markup=renderToStaticMarkup(<svg xmlns="http://www.w3.org/2000/svg" viewBox={`${vx} ${vy} ${vw} ${vh}`} width={vw} height={vh} fontFamily="Arial, Helvetica, sans-serif">
     <PlanDefs appearance={layout.appearance} prefix="x" outdoor={project.outdoor}/>
     <rect x={vx} y={vy} width={vw} height={vh} fill="#fbfaf7"/>
     <RoomShell project={project} appearance={layout.appearance} showGrid={false} showMeasurements={false} k={k} prefix="x"/>
     {ordered.map(f=><FurnitureArt key={f.id} item={f} prefix="x"/>)}
     {ordered.map(f=><FurnitureLabel key={f.id} item={f} k={k}/>)}
-    <DimensionLayer dims={dims} k={k}/>
+    <DimensionLayer dims={dims} k={k} furniture={layout.furniture}/>
   </svg>)
   return new Promise(resolve=>{
     const img=new Image()

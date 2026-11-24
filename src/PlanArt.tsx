@@ -267,6 +267,9 @@ export function FurnitureArt({ item, invalid = false, prefix = 'p' }: { item: Fu
         {[-1,1].map(s=><g key={s}><rect x={s*w*.32-2} y={-d*.28} width="4" height={d*.68} rx="1" fill="#343b40"/><path d={`M ${s*w*.32-9} ${d/2-2} h 18`} stroke="#20262a" strokeWidth="2.5" strokeLinecap="round"/></g>)}
       </>
     } break
+    case 'monitor': detail = <><rect x={-w/2+2} y={-d/2+1} width={w-4} height="5" rx="1" fill="#122b3c" stroke="#718995" strokeWidth=".6"/><rect x="-2" y="-2" width="4" height="8" fill="#626a6e"/><rect x={-w*.17} y={d/2-3} width={w*.34} height="2" rx="1" fill="#464d50"/></>; break
+    case 'vase': detail = <><ellipse rx={w*.42} ry={d*.42} fill={item.color} stroke="#907f70" strokeWidth=".8"/><ellipse rx={w*.18} ry={d*.18} fill="#a99a88"/></>; break
+    case 'decor': detail = <><rect x={-w*.38} y={-d*.36} width={w*.76} height={d*.72} rx={Math.min(5,w*.2)} fill={item.color} stroke="#748174" strokeWidth=".7"/><path d={`M ${-w*.22} 0 H ${w*.22}`} stroke="#eef2ea" strokeWidth="1"/></>; break
     case 'rattan-table': {
       const cane = item.accent ?? '#d8bd8c', r = Math.min(w, d) * .22
       return <g transform={`translate(${item.x} ${item.y}) rotate(${item.rotation})`}>
@@ -342,7 +345,7 @@ export function FurnitureArt({ item, invalid = false, prefix = 'p' }: { item: Fu
 
 /** Upright, size-aware name label drawn at the item's center. */
 export function FurnitureLabel({ item, k = 1 }: { item: Furniture; k?: number }) {
-  if (item.kind === 'rug' || item.kind === 'haven' || isMirrorKind(item.kind)) return null
+  if (item.kind === 'rug' || item.kind === 'haven' || item.supportId || item.kind === 'monitor' || item.kind === 'vase' || item.kind === 'decor' || isMirrorKind(item.kind)) return null
   const rot = ((item.rotation % 180) + 180) % 180
   const avail = rot < 10 || rot > 170 ? item.width : Math.abs(rot - 90) < 10 ? item.depth : Math.min(item.width, item.depth)
   const size = Math.min(12 * k, (avail - 6) / (item.name.length * .56))

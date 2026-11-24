@@ -1,9 +1,9 @@
-import { clampInside, fitOpenings, interior } from './geometry.ts'
+import { canSupport, clampInside, findSupport, fitOpenings, interior } from './geometry.ts'
 import { buildHaven, clampGroup, HAVEN, type Fabric, type HavenInfo } from './sofa.ts'
 import type { MirrorKind } from './parts.ts'
 import { clone, uid } from './compat.ts'
 
-export type FurnitureKind = 'bed' | 'wardrobe' | 'desk' | 'bedside' | 'dresser' | 'sofa' | 'shelf' | 'chair' | 'gaming' | 'haven' | 'shoe' | 'rug' | 'custom'
+export type FurnitureKind = 'bed' | 'wardrobe' | 'desk' | 'bedside' | 'dresser' | 'sofa' | 'shelf' | 'chair' | 'gaming' | 'haven' | 'shoe' | 'rug' | 'custom' | 'monitor' | 'vase' | 'decor'
   | 'outdoor-sofa' | 'garden-chair' | 'outdoor-table' | 'lounger' | 'planter'
   | MirrorKind | 'tv-unit' | 'tv-stand' | 'rattan-table' | 'lugo-chair' | 'halo-table'
 export const OUTDOOR_KINDS: FurnitureKind[] = ['outdoor-sofa', 'garden-chair', 'outdoor-table', 'lounger', 'planter']
@@ -36,6 +36,8 @@ export type Furniture = {
   frameless?: boolean; led?: boolean; rounded?: boolean
   /** TV screen dimensions exclude its two-legged floor stand. */
   screenHeight?: number; standHeight?: number; screenInches?: number
+  /** Optional supporting furniture. Coordinates remain in room centimeters. */
+  supportId?: string
 }
 export type MirrorMount = 'wall' | 'free' | 'lean'
 export type LugoFabric = 'boucle' | 'textured' | 'tweed'
@@ -58,8 +60,8 @@ export function mirrorDepth(mount: MirrorMount, height: number) { return mount =
 export const woodFinishes: Record<string, string> = { Oak: '#c49a6c', Mahogany: '#7a3b26' }
 export const lugoFabrics: Record<LugoFabric, string> = { boucle: 'Bouclé', textured: 'Textured', tweed: 'Tweed' }
 export const lugoColors: Record<string, string> = { 'Off-white': '#ece7dc', Beige: '#d8c6aa', Grey: '#a8a6a1', Terracotta: '#b5654a' }
-export type Category = 'Beds' | 'Wardrobes & Storage' | 'Desks & Office' | 'Sofas & Seating' | 'Tables' | 'TV Units' | 'Mirrors' | 'Rugs & Carpets' | 'Outdoor Furniture' | 'Custom Furniture'
-export const CATEGORIES: Category[] = ['Beds', 'Wardrobes & Storage', 'Desks & Office', 'Sofas & Seating', 'Tables', 'TV Units', 'Mirrors', 'Rugs & Carpets', 'Outdoor Furniture', 'Custom Furniture']
+export type Category = 'Beds' | 'Wardrobes & Storage' | 'Desks & Office' | 'Sofas & Seating' | 'Tables' | 'TV Units' | 'Mirrors' | 'Rugs & Carpets' | 'Decor' | 'Outdoor Furniture' | 'Custom Furniture'
+export const CATEGORIES: Category[] = ['Beds', 'Wardrobes & Storage', 'Desks & Office', 'Sofas & Seating', 'Tables', 'TV Units', 'Mirrors', 'Rugs & Carpets', 'Decor', 'Outdoor Furniture', 'Custom Furniture']
 /** A design (layout): furniture + appearance. Shares its room's geometry. */
 export type Layout = { id: string; name: string; furniture: Furniture[]; appearance: Appearance; updatedAt?: number }
 /** Openings are positioned along a wall. `start` is measured from the wall's
@@ -132,6 +134,9 @@ export const catalog: CatalogItem[] = [
   { kind: 'mirror-floor', name: 'Leaning floor mirror', width: 75, depth: 31, height: 180, color: '#b58a5c', material: 'light-wood', category: 'Mirrors', extra: { mount: 'lean' } },
   { kind: 'tv-unit', name: 'Ariika Japanese TV Unit', width: 180, depth: 40, height: 50, color: '#c49a6c', accent: '#d8bd8c', material: 'light-wood', category: 'TV Units', brand: 'Ariika' },
   { kind: 'tv-stand', name: 'TV with Stand', width: 145, depth: 32, height: 111, color: '#202428', material: 'black', category: 'TV Units', extra: { screenHeight: 84, standHeight: 27, screenInches: 65 } },
+  { kind: 'monitor', name: 'Desk Monitor', width: 55, depth: 18, height: 42, color: '#252c32', material: 'black', category: 'Desks & Office' },
+  { kind: 'vase', name: 'Decorative Vase', width: 18, depth: 18, height: 32, color: '#d7c5af', material: 'light-wood', category: 'Decor' },
+  { kind: 'decor', name: 'Decorative Object', width: 20, depth: 16, height: 18, color: '#b5bbae', material: 'grey', category: 'Decor' },
   { kind: 'rattan-table', name: 'Ariika Rattan Middle Table', width: 120, depth: 60, height: 42, color: '#c49a6c', accent: '#d8bd8c', material: 'light-wood', category: 'Tables', brand: 'Ariika' },
   { kind: 'lugo-chair', name: 'Ariika Lugo Chair', width: 60, depth: 68, height: 75, color: '#ece7dc', accent: '#d2b089', material: 'light-wood', category: 'Sofas & Seating', brand: 'Ariika', extra: { fabric: 'boucle' } },
   { kind: 'halo-table', name: 'Ariika Halo Side Table', width: 40, depth: 40, height: 51, color: '#d2b089', material: 'light-wood', category: 'Tables', brand: 'Ariika' },
@@ -291,6 +296,12 @@ export function normalizeProject(input:unknown,strict=false):Project {
       }
       furniture.push(fitted)
     }
+    for (const item of furniture) {
+      const old = furniture.find(other => other.id === item.supportId)
+      const support = old && canSupport(item, old) ? old : findSupport(item, furniture)
+      item.supportId = support && support.height + item.height <= project.room.ceiling ? support.id : undefined
+      if (item.supportId && item.kind === 'tv-stand' && !old) item.rotation = support!.rotation + 180
+    }
     project.layouts.push({id:typeof layout.id==='string'?layout.id:uid(),name:typeof layout.name==='string'?layout.name:'Design',furniture,appearance,updatedAt:num(layout.updatedAt,project.updatedAt)})
   }
   if(!project.layouts.some(l=>l.id===project.activeLayoutId)) project.activeLayoutId=project.layouts[0].id
@@ -314,9 +325,9 @@ function backup(key:string,raw:string){ try{ localStorage.setItem(`${key}-backup
 /** Loads the studio. If only the previous single-room format exists, it is
  *  copied to a timestamped backup first, then migrated into a room of a new
  *  studio. The old key itself is left untouched, so it can always be recovered. */
-export function loadStudio(): { studio: Studio; message?: string } {
+export function loadStudio(): { studio: Studio; message?: string; isNew?: boolean } {
   let raw: string | null = null
-  try { raw = localStorage.getItem(STUDIO_KEY) } catch { return { studio: initialStudio(), message: 'Browser storage is unavailable — use JSON export to keep your work.' } }
+  try { raw = localStorage.getItem(STUDIO_KEY) } catch { return { studio: initialStudio(), isNew: true, message: 'Browser storage is unavailable — use JSON export to keep your work.' } }
   if (raw) {
     try { return { studio: normalizeStudio(JSON.parse(raw)) } }
     catch { backup(STUDIO_KEY, raw) /* fall through to the legacy data, never silently reset */ }
@@ -331,7 +342,7 @@ export function loadStudio(): { studio: Studio; message?: string } {
       return { studio, message: raw ? 'Saved projects could not be read; a backup was kept and your previous bedroom was restored.' : `Your saved bedroom and its ${room.layouts.length} designs were moved into “My Rooms”. A backup copy was kept.` }
     } catch { /* fall through */ }
   }
-  return { studio: initialStudio(), message: raw || legacy ? 'Saved data could not be read. A backup copy was kept in this browser and a new project was started.' : undefined }
+  return { studio: initialStudio(), isNew: true, message: raw || legacy ? 'Saved data could not be read. A backup copy was kept in this browser; create a new room to begin.' : undefined }
 }
 export function saveStudio(studio: Studio): boolean {
   try { localStorage.setItem(STUDIO_KEY, JSON.stringify(studio)); return true } catch { return false }
@@ -341,7 +352,11 @@ export function freshCopy(room: Project, name?: string): Project {
   const c: Project = clone(room)
   c.id = uid(); if (name) c.name = name; c.updatedAt = Date.now()
   const map = new Map<string, string>()
-  for (const l of c.layouts) { const nid = uid(); if (l.id === room.activeLayoutId) c.activeLayoutId = nid; l.id = nid; l.furniture = l.furniture.map(fu => ({ ...fu, id: uid(), groupId: fu.groupId ? (map.get(fu.groupId) ?? (map.set(fu.groupId, uid()), map.get(fu.groupId)!)) : undefined })) }
+  for (const l of c.layouts) {
+    const nid = uid(); if (l.id === room.activeLayoutId) c.activeLayoutId = nid; l.id = nid
+    const ids = new Map(l.furniture.map(fu => [fu.id, uid()]))
+    l.furniture = l.furniture.map(fu => ({ ...fu, id: ids.get(fu.id)!, supportId: fu.supportId ? ids.get(fu.supportId) : undefined, groupId: fu.groupId ? (map.get(fu.groupId) ?? (map.set(fu.groupId, uid()), map.get(fu.groupId)!)) : undefined }))
+  }
   if (!c.layouts.some(l => l.id === c.activeLayoutId)) c.activeLayoutId = c.layouts[0].id
   c.doors = c.doors.map(d => ({ ...d, id: uid() })); c.windows = c.windows.map(w => ({ ...w, id: uid() }))
   return c

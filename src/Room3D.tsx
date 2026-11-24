@@ -31,10 +31,10 @@ function Rug({item}:{item:Furniture}) {
     ? <mesh position={[0,.007,0]} receiveShadow><cylinderGeometry args={[w/2,w/2,.01,72]}/><meshStandardMaterial color={item.color} map={map} roughness={1}/></mesh>
     : <mesh position={[0,.007,0]} receiveShadow><boxGeometry args={[w,.01,d]}/><meshStandardMaterial color={item.color} map={map} roughness={1}/></mesh>
 }
-function DeskTop({item,h}:{item:Furniture;h:number}) {
+function DeskTop({item,h,hasMonitor=false}:{item:Furniture;h:number;hasMonitor?:boolean}) {
   const acc=deskAccessories(item.width,item.depth)
   return <>
-    {acc.monitor&&<group position={[m(acc.monitor.x),h,m(acc.monitor.y)]}>
+    {acc.monitor&&!hasMonitor&&<group position={[m(acc.monitor.x),h,m(acc.monitor.y)]}>
       <Box size={[.16,.012,.1]} position={[0,.006,.02]} color="#4b4f54" roughness={.4}/>
       <Box size={[.03,.16,.02]} position={[0,.09,0]} color="#5a5f64" roughness={.4}/>
       <Box size={[m(acc.monitor.w),m(acc.monitor.w)*.58,.022]} position={[0,.16+m(acc.monitor.w)*.29,0]} color="#24272b" roughness={.35}/>
@@ -128,7 +128,7 @@ function TVWithStand({item}:{item:Furniture}) {
     <Box size={[w*.32,screenH*.018,.002]} position={[-w*.26,standH+screenH*.8,faceZ+.023]} color="#476b7d" opacity={.38}/>
     {[-1,1].map(s=><group key={s}>
       <Box size={[.025,standH,.035]} position={[s*legX,standH/2,faceZ+.008]} color={frame} roughness={.35}/>
-      <Box size={[.19,.018,d*.75]} position={[s*legX,.012,0]} color={frame} roughness={.38}/>
+      <Box size={[.19,.018,d*.75]} position={[s*legX,.009,0]} color={frame} roughness={.38}/>
     </group>)}
   </>
 }
@@ -228,7 +228,7 @@ function GamingChair({item}:{item:Furniture}) {
     </group>
   </>
 }
-function SceneFurniture({item,roomWidth,roomDepth,sceneKey=''}:{item:Furniture;roomWidth:number;roomDepth:number;sceneKey?:string}) {
+function SceneFurniture({item,roomWidth,roomDepth,sceneKey='',supportHeight=0,hasMonitor=false}:{item:Furniture;roomWidth:number;roomDepth:number;sceneKey?:string;supportHeight?:number;hasMonitor?:boolean}) {
   const w=m(item.width),d=m(item.depth),h=m(item.height)
   const x=m(item.x-roomWidth/2),z=m(item.y-roomDepth/2)
   const wood=item.color
@@ -240,6 +240,21 @@ function SceneFurniture({item,roomWidth,roomDepth,sceneKey=''}:{item:Furniture;r
     case 'haven': body=<HavenModule item={item}/>; break
     case 'tv-unit': body=<TVUnit item={item}/>; break
     case 'tv-stand': body=<TVWithStand item={item}/>; break
+    case 'monitor': body=<>
+      <Box size={[w*.3,.012,d*.72]} position={[0,.006,d*.08]} color="#4b5358"/>
+      <Box size={[.025,h*.27,.025]} position={[0,h*.135,0]} color="#596268"/>
+      <Box size={[w,h*.73,.024]} position={[0,h*.63,-d*.28]} color={item.color} roughness={.3}/>
+      <Box size={[w-.025,h*.73-.025,.003]} position={[0,h*.63,-d*.28+.014]} color="#284a60" roughness={.15}/>
+    </>; break
+    case 'vase': body=<>
+      <Cyl r={w*.35} r2={w*.45} h={h*.72} position={[0,h*.36,0]} color={item.color}/>
+      <Cyl r={w*.22} h={h*.28} position={[0,h*.86,0]} color={item.color}/>
+      <Cyl r={w*.2} h={.008} position={[0,h,0]} color="#8d7968"/>
+    </>; break
+    case 'decor': body=<>
+      <Box size={[w*.75,h*.16,d*.72]} position={[0,h*.08,0]} color={item.color}/>
+      <mesh position={[0,h*.56,0]} castShadow><sphereGeometry args={[Math.min(w,d,h)*.42,24,16]}/><meshStandardMaterial color={item.color} roughness={.48}/></mesh>
+    </>; break
     case 'rattan-table': body=<RattanTable item={item}/>; break
     case 'lugo-chair': body=<LugoChair item={item}/>; break
     case 'halo-table': body=<HaloTable item={item}/>; break
@@ -295,7 +310,7 @@ function SceneFurniture({item,roomWidth,roomDepth,sceneKey=''}:{item:Furniture;r
       <Box size={[w,.035,d]} position={[0,h-.0175,0]} color={wood}/>
       {[-1,1].flatMap(ix=>[-1,1].map(iz=><Box key={`${ix}:${iz}`} size={[.045,h-.035,.045]} position={[ix*(w/2-.05),(h-.035)/2,iz*(d/2-.05)]} color="#3f3a36" roughness={.5}/>))}
       <Box size={[w-.1,.06,.02]} position={[0,h-.065,-d/2+.06]} color={shade(wood,-20)}/>
-      <DeskTop item={item} h={h}/>
+      <DeskTop item={item} h={h} hasMonitor={hasMonitor}/>
     </>; break
     case 'shoe': {
       const plinth=.05, rows=h>.9?3:2, rowH=(h-plinth-.02)/rows
@@ -326,7 +341,7 @@ function SceneFurniture({item,roomWidth,roomDepth,sceneKey=''}:{item:Furniture;r
       {(item.kind==='dresser'||item.kind==='bedside'||item.kind==='shelf') && [0.3,0.53,0.76].map(q=><Box key={q} size={[w*.75,.016,.015]} position={[0,h*q,d/2+.01]} color="#7c6552"/>)}
     </>
   }
-  return <group position={[x,0,z]} rotation={[0,-item.rotation*Math.PI/180,0]}>{body}</group>
+  return <group position={[x,m(supportHeight),z]} rotation={[0,-item.rotation*Math.PI/180,0]}>{body}</group>
 }
 export type CameraView='overview'|'inside'|'top'|'exterior'
 type Orbit={target:THREE.Vector3;update:()=>void;minDistance:number;maxDistance:number;maxPolarAngle:number;minPolarAngle:number;addEventListener:(t:'change',f:()=>void)=>void;removeEventListener:(t:'change',f:()=>void)=>void}
@@ -633,7 +648,7 @@ export default function Room3D({project,furniture,mode,resetKey=0,onReset,openDo
   const outdoorOn=!!exterior(project)
   const anyOpen=doors.some(dr=>openDoors[dr.id])
   // Mirrors re-capture their reflection when the room's contents or finishes change.
-  const sceneKey=useMemo(()=>[furniture.map(f=>`${f.id}:${Math.round(f.x)}:${Math.round(f.y)}:${Math.round(f.rotation)}:${f.color}:${Math.round(f.width)}`).join(','),floor.material,floor.baseColor,JSON.stringify(appearance.walls),mode,JSON.stringify(project.walls),W,D].join('|'),[furniture,floor.material,floor.baseColor,appearance.walls,mode,project.walls,W,D])
+  const sceneKey=useMemo(()=>[furniture.map(f=>`${f.id}:${Math.round(f.x)}:${Math.round(f.y)}:${Math.round(f.rotation)}:${f.color}:${Math.round(f.width)}:${Math.round(f.height)}:${f.supportId??''}`).join(','),floor.material,floor.baseColor,JSON.stringify(appearance.walls),mode,JSON.stringify(project.walls),W,D].join('|'),[furniture,floor.material,floor.baseColor,appearance.walls,mode,project.walls,W,D])
   return <div className="three-stage">
     <Canvas shadows="soft" dpr={COARSE?[1,1.25]:[1,2]} gl={{preserveDrawingBuffer:true,antialias:!COARSE}} camera={{position:[5.6,4.1,5.8],fov:42,near:.05,far:300}}
       onCreated={({gl})=>{gl.toneMapping=THREE.NeutralToneMapping;gl.toneMappingExposure=1}}>
@@ -663,7 +678,7 @@ export default function Room3D({project,furniture,mode,resetKey=0,onReset,openDo
         <Box size={[m(ac.width),m(ac.height),.2]} position={[0,0,0]} color="#f2efe8" roughness={.5}/>
         <Box size={[m(ac.width)*.9,.012,.02]} position={[0,-m(ac.height)/2+.03,(ac.wall==='top'||ac.wall==='left'?1:-1)*.1]} color="#c9c5bc"/>
       </group>})()}
-      {furniture.map(item=><SceneFurniture key={item.id} item={item} roomWidth={W} roomDepth={D} sceneKey={sceneKey}/>)}
+      {furniture.map(item=><SceneFurniture key={item.id} item={item} roomWidth={W} roomDepth={D} sceneKey={sceneKey} supportHeight={furniture.find(f=>f.id===item.supportId)?.height??0} hasMonitor={furniture.some(f=>f.kind==='monitor'&&f.supportId===item.id)}/>)}
       <CameraRig view={mode} w={w} d={d} h={h} resetKey={resetKey} front={front} roomId={project.id}/>
       <OrbitControls makeDefault enableDamping dampingFactor={.09} rotateSpeed={mode==='inside'?.45:.75} zoomSpeed={.9} panSpeed={.85} screenSpacePanning enablePan={mode!=='inside'} enableZoom={mode!=='inside'}/>
     </Canvas>

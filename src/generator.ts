@@ -1,5 +1,5 @@
 import { activeLayout, uid, type Furniture, type Layout, type Project } from './model'
-import { bounds, clampInside, doorBlocked, inside, interior, overlaps, snapToWalls } from './geometry'
+import { bounds, canSupport, clampInside, doorBlocked, followSupport, inside, interior, overlaps, snapToWalls } from './geometry'
 import { clone } from './compat'
 
 const positions = [
@@ -49,13 +49,14 @@ export function generateIdeas(project: Project): { layouts: Layout[]; error?: st
   const result: Layout[]=[]
   for (let variant=0;variant<4;variant++) {
     const placed: Furniture[]=[]
+    const ids=new Map<string,string>()
     const bed=source.find(f=>f.kind==='bed')
     if (bed) {
       const [x,y,rotation]=positions[variant].bed
       const scaled=clampInside({...bed,id:uid(),x:x*project.room.width/520,y:y*project.room.depth/320,rotation},project)
       const proposed=scaled&&clampInside(snapToWalls(scaled,project,60),project)
       if (!proposed || doorBlocked(proposed,project)) continue
-      placed.push(proposed)
+      placed.push({...proposed,supportId:undefined});ids.set(bed.id,proposed.id)
     }
     let failed=''
     // Grouped sofa sections are placed as one rigid arrangement.
@@ -73,12 +74,19 @@ export function generateIdeas(project: Project): { layouts: Layout[]; error?: st
       const pick=opts.sort((a,b)=>a.score-b.score).find(o=>members.every(m=>{const c={...m,x:m.x+o.dx,y:m.y+o.dy};return inside(c,project)&&!doorBlocked(c,project)&&placed.every(p=>!overlaps(c,p,8))}))
       if (!pick) { failed=members[0].name; break }
       const gid=uid()
-      placed.push(...members.map(m=>({...m,id:uid(),groupId:gid,x:m.x+pick.dx,y:m.y+pick.dy})))
+      placed.push(...members.map(m=>{const id=uid();ids.set(m.id,id);return {...m,id,groupId:gid,x:m.x+pick.dx,y:m.y+pick.dy,supportId:undefined}}))
     }
-    for (const item of (failed?[]:source).filter(f=>f.id!==bed?.id && f.kind!=='rug' && f.mount!=='wall' && !(f.grouped&&f.groupId)).sort((a,b)=>b.width*b.depth-a.width*a.depth)) {
+    for (const item of (failed?[]:source).filter(f=>f.id!==bed?.id && f.kind!=='rug' && f.mount!=='wall' && !f.supportId && !(f.grouped&&f.groupId)).sort((a,b)=>b.width*b.depth-a.width*a.depth)) {
       const found=candidates(item,project,variant).find(c=>inside(c,project) && !doorBlocked(c,project) && placed.every(p=>!overlaps(c,p,8)))
       if (!found) { failed=item.name; break }
-      placed.push({...found,id:uid()})
+      const id=uid();ids.set(item.id,id);placed.push({...found,id,supportId:undefined})
+    }
+    for (const item of failed?[]:source.filter(f=>!!f.supportId)) {
+      const before=source.find(f=>f.id===item.supportId),after=placed.find(f=>f.id===ids.get(item.supportId!))
+      if(!before||!after){failed=item.name;break}
+      const attached={...followSupport(item,before,after),id:uid(),supportId:after.id}
+      if(!inside(attached,project)||!canSupport(attached,after)||attached.height+after.height>project.room.ceiling||placed.some(p=>p.id!==after.id&&overlaps(attached,p,1))){failed=item.name;break}
+      placed.push(attached)
     }
     if (!failed) {
       const rugs=source.filter(f=>f.kind==='rug'||f.mount==='wall').map(f=>clampInside({...f,id:uid()},project)).filter((f):f is Furniture=>!!f)

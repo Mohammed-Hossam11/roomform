@@ -6,8 +6,9 @@ type AddOptions={width:number;depth:number;height:number;rugShape?:'rectangle'|'
 import type { CameraView } from './Room3D'
 import { clone, onMediaChange } from './compat'
 import { AppErrorBoundary } from './ErrorBoundary'
+import Home, { WelcomeIntro } from './Home'
 import { activeLayout, activeRoom, catalog, CATEGORIES, frameColors, isMirrorKind, lugoColors, lugoFabrics, mirrorDepth, mirrorSpecs, woodFinishes, type LugoFabric, type MirrorMount, createRoom, defaultAppearance, floorPresets, freshCopy, gamingPresets, isOutdoorKind, loadStudio, newFurniture, normalizeProject, normalizeStudio, palette, ROOM_LIMITS, rugColors, saveStudio, uid, wallPresets, type FloorMaterial, type Furniture, type FurnitureKind, type Material, type Project, type RoomType, type Studio, type WallName, type WallType } from './model'
-import { clampInside, doorBlocked, mountNearest, mountOnWall, nextWall, wallFrame, fitOpenings, inside, isSolid, openingIssues, overlaps, placeNear, resizeRoom, warnings } from './geometry'
+import { canSupport, clampInside, doorBlocked, findSupport, followSupport, isEligibleSupport, mountNearest, mountOnWall, nextWall, wallFrame, fitOpenings, inside, isSolid, openingIssues, overlaps, placeNear, resizeRoom, warnings } from './geometry'
 import { generateIdeas } from './generator'
 import { export2D, export3D, exportRoomJson, exportStudioJson } from './export'
 import { defaultExportPrefs, ExportDialog, type ExportPrefs } from './ExportDialog'
@@ -17,7 +18,7 @@ import { fromCm, NewRoomModal, RoomsPanel, RoomStructure, toCm, type Unit } from
 import { floorDataUrl } from './textures'
 import { buildHaven, chaiseSide, officialHavenColors, clampGroup, fabricNames, groupOf, groupSize, havenColors, hvOf, mirrorGroup, resizeModule, rotateGroup, sameGroup, scaleGroup, translate, unionBounds, type Arrangement, type Fabric } from './sofa'
 
-const icons: Record<FurnitureKind,typeof BedDouble>={bed:BedDouble,wardrobe:Box,desk:Monitor,bedside:Table2,dresser:Table2,sofa:Armchair,shelf:Layers3,chair:Armchair,gaming:Gamepad2,haven:Sofa,shoe:Footprints,rug:RectangleHorizontal,custom:Maximize2,'outdoor-sofa':Sofa,'garden-chair':Armchair,'outdoor-table':Table2,lounger:Sun,planter:Sprout,'mirror-rect':RectangleVertical,'mirror-arch':RectangleVertical,'mirror-round':Circle,'mirror-oval':Circle,'mirror-wavy':RectangleVertical,'mirror-organic':Circle,'mirror-vanity':RectangleVertical,'mirror-floor':RectangleVertical,'tv-unit':Tv,'tv-stand':Tv,'rattan-table':Table2,'lugo-chair':Armchair,'halo-table':Circle}
+const icons: Record<FurnitureKind,typeof BedDouble>={bed:BedDouble,wardrobe:Box,desk:Monitor,bedside:Table2,dresser:Table2,sofa:Armchair,shelf:Layers3,chair:Armchair,gaming:Gamepad2,haven:Sofa,shoe:Footprints,rug:RectangleHorizontal,custom:Maximize2,monitor:Monitor,vase:Circle,decor:Circle,'outdoor-sofa':Sofa,'garden-chair':Armchair,'outdoor-table':Table2,lounger:Sun,planter:Sprout,'mirror-rect':RectangleVertical,'mirror-arch':RectangleVertical,'mirror-round':Circle,'mirror-oval':Circle,'mirror-wavy':RectangleVertical,'mirror-organic':Circle,'mirror-vanity':RectangleVertical,'mirror-floor':RectangleVertical,'tv-unit':Tv,'tv-stand':Tv,'rattan-table':Table2,'lugo-chair':Armchair,'halo-table':Circle}
 const Room3D = lazy(() => import('./Room3D'))
 const copy=(p:Project):Project=>clone(p)
 const WALLS:WallName[]=['top','right','bottom','left']
@@ -110,6 +111,11 @@ function EditSizeModal({item,maxSide,ceiling,onApply,onClose}:{item:Furniture;ma
 export default function App() {
   const [boot]=useState(loadStudio)
   const [studio,setStudio]=useState<Studio>(boot.studio)
+  const [isNew,setIsNew]=useState(!!boot.isNew)
+  const [home,setHome]=useState(true)
+  const [intro,setIntro]=useState(()=>{try{return !sessionStorage.getItem('roomform-welcomed')&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches}catch{return false}})
+  const [introExit,setIntroExit]=useState(false)
+  useEffect(()=>{if(!intro)return;try{sessionStorage.setItem('roomform-welcomed','1')}catch{/* optional */}const fade=setTimeout(()=>setIntroExit(true),1050),done=setTimeout(()=>setIntro(false),1300);return()=>{clearTimeout(fade);clearTimeout(done)}},[intro])
   const project=activeRoom(studio)
   /** Replaces the active room only; every other room is left untouched. */
   const setProject=(next:Project|((prev:Project)=>Project))=>setStudio(s=>{
@@ -150,10 +156,11 @@ export default function App() {
   const layout=activeLayout(project), furniture=layout?.furniture??[], selected=furniture.find(f=>f.id===selectedId)
   const {width:RW,depth:RD,ceiling:RC}=project.room
   useEffect(()=>{
+    if(isNew)return
     setSaveState('saving')
     const t=setTimeout(()=>setSaveState(saveStudio(studio)?'saved':'error'),450)
     return()=>clearTimeout(t)
-  },[studio])
+  },[studio,isNew])
   useEffect(()=>{if(boot.message)setNotice(boot.message)},[boot])
   // Switching rooms: fresh selection, history, door state and view.
   useEffect(()=>{setSelectedId(null);past.current=[];future.current=[];setOpenDoors({})},[project.id])
@@ -161,7 +168,27 @@ export default function App() {
   useEffect(()=>{if(!selected)setSizeOpen(false)},[selected])
   const checkpoint=()=>{past.current.push(copy(project));if(past.current.length>80)past.current.shift();future.current=[]}
   const update=(fn:(draft:Project)=>void,record=true)=>{if(record)checkpoint();setProject(prev=>{const draft=copy(prev);fn(draft);return draft})}
-  const updateFurniture=(item:Furniture,record=true)=>{const fitted=clampInside(item,project);if(!fitted){setNotice(`${item.name} cannot fit inside the room at that size and angle.`);return false}const previous=furniture.find(f=>f.id===item.id);if(fitted.kind==='tv-stand'&&previous&&fitted.width!==previous.width&&fitted.screenInches===previous.screenInches)fitted.screenInches=Math.round(65*fitted.width/145);update(d=>{const l=activeLayout(d);l.furniture=l.furniture.map(f=>f.id===item.id?fitted:f)},record);return true}
+  const updateFurniture=(item:Furniture,record=true)=>{
+    let fitted=clampInside(item,project)
+    if(!fitted){setNotice(`${item.name} cannot fit inside the room at that size and angle.`);return false}
+    const previous=furniture.find(f=>f.id===item.id)
+    let support=findSupport(fitted,furniture.filter(f=>f.id!==item.id))
+    if(support&&support.height+fitted.height>RC){support=undefined;if(previous?.supportId){setNotice(`${item.name} would be taller than the ceiling on that surface.`);return false}}
+    if(support&&support.id!==previous?.supportId&&fitted.kind==='tv-stand')fitted={...fitted,rotation:support.rotation+180}
+    fitted={...fitted,supportId:support?.id}
+    if(!support&&furniture.some(other=>isEligibleSupport(fitted!,other)&&overlaps(fitted!,other))){
+      const free=placeNear(fitted,furniture.filter(f=>f.id!==item.id),project)
+      if(!free?.free){setNotice(`${item.name} needs a clear floor position or a surface large enough for it.`);return false}
+      fitted=free.item
+    }
+    if(fitted.kind==='tv-stand'&&previous&&fitted.width!==previous.width&&fitted.screenInches===previous.screenInches)fitted.screenInches=Math.round(65*fitted.width/145)
+    update(d=>{const l=activeLayout(d),before=l.furniture.find(f=>f.id===item.id);l.furniture=l.furniture.map(f=>{
+      if(f.id===item.id)return fitted
+      if(before&&f.supportId===item.id){const moved=followSupport(f,before,fitted);return canSupport(moved,fitted)?moved:{...moved,supportId:undefined}}
+      return f
+    })},record)
+    return true
+  }
   const maxSide=Math.max(RW,RD)
   const members=selected?groupOf(selected,furniture):[]
   const grouped=members.length>1
@@ -240,6 +267,15 @@ export default function App() {
     if(x===undefined&&!outside) {
       outer: for(let yy=30;yy<RD;yy+=10)for(let xx=30;xx<RW;xx+=10){const test=clampInside({...item,x:xx,y:yy},project);if(test&&inside(test,project)&&(kind==='rug'||!doorBlocked(test,project))&&furniture.every(f=>kind==='rug'||f.kind==='rug'||!overlaps(test,f,8))){item=test;break outer}}
     }
+    if(!outside){
+      if(x===undefined&&kind==='tv-stand'){
+        const unit=furniture.find(f=>f.kind==='tv-unit')
+        if(unit){const centered=clampInside({...item,x:unit.x,y:unit.y,rotation:unit.rotation+180},project);if(centered&&canSupport(centered,unit))item=centered}
+      }
+      const support=findSupport(item,furniture)
+      if(support&&support.height+item.height<=RC)item={...item,supportId:support.id,rotation:kind==='tv-stand'?support.rotation+180:item.rotation}
+      else if(furniture.some(other=>isEligibleSupport(item,other)&&overlaps(item,other))){const free=placeNear({...item,supportId:undefined},furniture,project);if(free?.free)item=free.item}
+    }
     update(d=>{activeLayout(d).furniture.push(item)});setSelectedId(item.id)
     if(warnings(item,[...furniture,item],project).length)setNotice('Item added. Review the highlighted placement warning.')
     return null
@@ -268,29 +304,30 @@ export default function App() {
       }
       setNotice('This sofa cannot be duplicated inside the room.');return
     }
-    const proto={...selected,id:uid(),name:`${selected.name} copy`,x:selected.x+25,y:selected.y+25}
+    const proto={...selected,id:uid(),name:`${selected.name} copy`,x:selected.x+25,y:selected.y+25,supportId:undefined}
     const res=isSolid(proto)?placeNear(proto,furniture,project):(()=>{const c=clampInside(proto,project);return c?{item:c,free:true}:null})()
     if(!res){setNotice('This item cannot be duplicated inside the room.');return}
-    update(d=>activeLayout(d).furniture.push(res.item));setSelectedId(res.item.id)
+    const item={...res.item,supportId:findSupport(res.item,furniture)?.id}
+    update(d=>activeLayout(d).furniture.push(item));setSelectedId(item.id)
     if(!res.free)setNotice('No free spot was found — the copy overlaps another item.')
   }
-  const remove=()=>{if(!selected)return;const ids=new Set(members.map(m=>m.id));update(d=>{activeLayout(d).furniture=activeLayout(d).furniture.filter(f=>!ids.has(f.id))});setSelectedId(null)}
+  const remove=()=>{if(!selected)return;const ids=new Set(members.map(m=>m.id));update(d=>{activeLayout(d).furniture=activeLayout(d).furniture.filter(f=>!ids.has(f.id)).map(f=>ids.has(f.supportId??'')?{...f,supportId:undefined}:f)});setSelectedId(null)}
   const undo=()=>{const prev=past.current.pop();if(!prev)return;future.current.push(copy(project));setProject(prev);setSelectedId(null)}
   const redo=()=>{const next=future.current.pop();if(!next)return;past.current.push(copy(project));setProject(next);setSelectedId(null)}
   const switchLayout=(id:string)=>{update(d=>{d.activeLayoutId=id});setSelectedId(null)}
   const nextDesignName=(d:Project)=>`Design ${String.fromCharCode(65+(d.layouts.length%26))}`
   const newLayout=async()=>{const name=await dialogs.prompt({title:'New Design',message:`Start an empty design in ${project.name}. Walls and openings are shared; furniture and finishes are not.`,label:'Design name',initial:`${nextDesignName(project)} — New option`,confirmLabel:'Create Design'});if(!name)return;const id=uid();update(d=>{d.layouts.push({id,name,furniture:[],appearance:clone(activeLayout(d)?.appearance??defaultAppearance())});d.activeLayoutId=id});setSelectedId(null)}
-  const duplicateLayout=()=>{const id=uid();update(d=>{const l=activeLayout(d);d.layouts.push({id,name:`${l.name} copy`,furniture:l.furniture.map(f=>({...f,id:uid()})),appearance:clone(l.appearance)});d.activeLayoutId=id});setSelectedId(null)}
-  const saveAsNewDesign=async()=>{const l=layout;const name=await dialogs.prompt({title:'Save as New Design',message:'Creates an independent copy. The current design stays exactly as it is.',label:'Design name',initial:`${nextDesignName(project)} — ${l.name.replace(/^(Design|Layout) [A-Z] — /,'')}`,confirmLabel:'Save Design'});if(!name?.trim())return;const id=uid();update(d=>{const src=activeLayout(d);d.layouts.push({id,name:name.trim(),furniture:src.furniture.map(f=>({...f,id:uid()})),appearance:clone(src.appearance)});d.activeLayoutId=id});setSelectedId(null);setNotice(`Saved as a new design: “${name.trim()}”. The original design is unchanged.`)}
+  const duplicateLayout=()=>{const id=uid();update(d=>{const l=activeLayout(d),ids=new Map(l.furniture.map(f=>[f.id,uid()]));d.layouts.push({id,name:`${l.name} copy`,furniture:l.furniture.map(f=>({...f,id:ids.get(f.id)!,supportId:f.supportId?ids.get(f.supportId):undefined})),appearance:clone(l.appearance)});d.activeLayoutId=id});setSelectedId(null)}
+  const saveAsNewDesign=async()=>{const l=layout;const name=await dialogs.prompt({title:'Save as New Design',message:'Creates an independent copy. The current design stays exactly as it is.',label:'Design name',initial:`${nextDesignName(project)} — ${l.name.replace(/^(Design|Layout) [A-Z] — /,'')}`,confirmLabel:'Save Design'});if(!name?.trim())return;const id=uid();update(d=>{const src=activeLayout(d),ids=new Map(src.furniture.map(f=>[f.id,uid()]));d.layouts.push({id,name:name.trim(),furniture:src.furniture.map(f=>({...f,id:ids.get(f.id)!,supportId:f.supportId?ids.get(f.supportId):undefined})),appearance:clone(src.appearance)});d.activeLayoutId=id});setSelectedId(null);setNotice(`Saved as a new design: “${name.trim()}”. The original design is unchanged.`)}
   const renameDesign=async()=>{const name=await dialogs.prompt({title:'Rename Design',message:'Give this design a new name.',label:'Design name',initial:layout.name});if(name&&name!==layout.name){update(d=>{activeLayout(d).name=name});setNotice('Design renamed.','success')}}
   const deleteLayout=async()=>{if(project.layouts.length<=1){setNotice('Keep at least one design in the room.');return}const name=layout.name;if(!await dialogs.confirm({title:'Delete Design?',message:`“${name}” will be permanently removed from ${project.name}. Other designs in this room are not affected.`,confirmLabel:'Delete Design',danger:true}))return;update(d=>{d.layouts=d.layouts.filter(l=>l.id!==d.activeLayoutId);d.activeLayoutId=d.layouts[0].id});setSelectedId(null);setNotice(`Deleted “${name}”.`)}
   const generate=()=>{const result=generateIdeas(project);if(result.layouts.length)update(d=>{d.layouts.push(...result.layouts);d.activeLayoutId=result.layouts[0].id});setSelectedId(null);setNotice(result.error??`Created ${result.layouts.length} distinct layout ideas.`)}
   // ---- rooms
-  const openRoom=(id:string)=>{setStudio(s=>({...s,activeRoomId:id}));setRoomsOpen(false);setView('2d')}
+  const openRoom=(id:string)=>{setStudio(s=>({...s,activeRoomId:id}));setRoomsOpen(false);setHome(false);setView('2d')}
   const createNewRoom=(name:string,type:RoomType,dims:Project['room'])=>{
     const room=createRoom(name,type,dims)
-    setStudio(s=>({...s,rooms:[...s.rooms,room],activeRoomId:room.id,updatedAt:Date.now()}))
-    setRoomsOpen(false);setView('2d');setNotice(`Created “${name}”. Your other rooms are unchanged.`);return null
+    setStudio(s=>({...s,rooms:isNew?[room]:[...s.rooms,room],activeRoomId:room.id,updatedAt:Date.now()}))
+    setIsNew(false);setHome(false);setRoomsOpen(false);setView('2d');setNotice(`Created “${name}”. Your other rooms are unchanged.`);return null
   }
   const renameRoom=async(id:string)=>{const r=studio.rooms.find(x=>x.id===id);if(!r)return;const name=await dialogs.prompt({title:'Rename Room',message:'Give your room a new name.',label:'Room name',initial:r.name});if(name&&name!==r.name){setStudio(s=>({...s,rooms:s.rooms.map(x=>x.id===id?{...x,name,updatedAt:Date.now()}:x)}));setNotice('Room renamed.','success')}}
   const duplicateRoom=async(id:string)=>{const r=studio.rooms.find(x=>x.id===id);if(!r)return;const name=await dialogs.prompt({title:'Duplicate Room',message:`Copies ${r.name} with all ${r.layouts.length} design${r.layouts.length===1?'':'s'}. The original stays unchanged.`,label:'Name of the copy',initial:`${r.name} copy`,confirmLabel:'Duplicate Room'});if(!name)return;const c=freshCopy(r,name);setStudio(s=>{const i=s.rooms.findIndex(x=>x.id===id);const rooms=[...s.rooms];rooms.splice(i+1,0,c);return {...s,rooms}});setNotice(`Duplicated “${r.name}” with all ${r.layouts.length} designs.`)}
@@ -312,9 +349,11 @@ export default function App() {
       if(mode==='design'){
         const src=rooms[0], added=[] as Project['layouts']
         for(const l of src.layouts){
-          const items=l.furniture.map(f=>clampInside({...f,id:uid()},project))
+          const ids=new Map(l.furniture.map(f=>[f.id,uid()]))
+          const items=l.furniture.map(f=>clampInside({...f,id:ids.get(f.id)!,supportId:f.supportId?ids.get(f.supportId):undefined},project))
           if(items.some(i=>!i))throw new Error(`“${l.name}” contains furniture that does not fit in ${project.name} (${RW} × ${RD} cm).`)
-          added.push({...l,id:uid(),name:`${l.name} (imported)`,furniture:items as Furniture[],appearance:clone(l.appearance)})
+          const restored=(items as Furniture[]).map(item=>{const support=items.find(other=>other?.id===item.supportId);return support&&canSupport(item,support)?item:{...item,supportId:undefined}})
+          added.push({...l,id:uid(),name:`${l.name} (imported)`,furniture:restored,appearance:clone(l.appearance)})
         }
         update(d=>{d.layouts.push(...added);d.activeLayoutId=added[0].id});setNotice(`Imported ${added.length} design${added.length===1?'':'s'} into “${project.name}”.`)
       } else {
@@ -349,7 +388,7 @@ export default function App() {
     const others=furniture.filter(f=>f.id!==selected.id)
     const res=isSolid(cand)?placeNear(cand,others,project):(()=>{const c=clampInside(cand,project);return c?{item:c,free:true}:null})()
     if(!res)return `At ${w} × ${d} cm, ${selected.name} cannot fit inside the ${RW} × ${RD} cm room at its current angle. Nothing was changed.`
-    update(dr=>{const l=activeLayout(dr);l.furniture=l.furniture.map(f=>f.id===selected.id?res.item:f)})
+    updateFurniture(res.item)
     const moved=Math.hypot(res.item.x-selected.x,res.item.y-selected.y)>.5
     if(!res.free)setNotice(`${selected.name} was resized but now overlaps another item.`)
     else if(moved)setNotice(`${selected.name} was moved to the nearest position where it fits.`)
@@ -429,9 +468,17 @@ export default function App() {
   const roomDirty=roomDraft.width!==String(fromCm(RW,unit))||roomDraft.depth!==String(fromCm(RD,unit))||roomDraft.ceiling!==String(fromCm(RC,unit))
   const floor=layout.appearance.floor, floorKind=floorPresets[floor.material].kind
   const currentWallColor=layout.appearance.walls[wallTarget]
+  if(home)return <>
+    <Home rooms={isNew?[]:studio.rooms} activeId={studio.activeRoomId} onContinue={()=>setHome(false)} onCreate={()=>setNewRoomOpen(true)} onOpen={openRoom} onRename={renameRoom} onDuplicate={duplicateRoom} onDelete={deleteRoom}/>
+    {newRoomOpen&&<NewRoomModal onCreate={createNewRoom} onClose={()=>setNewRoomOpen(false)}/>}
+    {dialogs.element}
+    {toast&&<Toast message={toast.message} tone={toast.tone} onClose={()=>setToast(null)}/>}
+    {intro&&<WelcomeIntro exiting={introExit} onSkip={()=>{setIntroExit(true);setTimeout(()=>setIntro(false),240)}}/>}
+  </>
   return <div className="app-shell">
     <header className="topbar">
       <div className="brand"><div className="brand-mark"><LayoutGrid size={20}/></div><span>roomform</span></div>
+      <button className="home-button" onClick={()=>{if(saveStudio(studio))setSaveState('saved');else setSaveState('error');setPanel(null);setHome(true)}} title="My Spaces / Home" aria-label="My Spaces / Home"><House size={16}/> My Spaces</button>
       <nav className="crumbs" aria-label="Current room and design">
         <button className="crumb-rooms" onClick={()=>setRoomsOpen(true)} title="My Rooms"><House size={16}/> My Rooms</button>
         <span className="crumb-sep">/</span>
@@ -492,7 +539,9 @@ export default function App() {
             <NumberField label="Screen size" value={selected.screenInches??65} min={24} max={120} suffix="in" onChange={inches=>{const width=Math.round(145*inches/65),screenHeight=Math.round(84*inches/65),standHeight=selected.standHeight??27;if(screenHeight+standHeight>RC){setNotice('The TV would be taller than the ceiling.');return}updateFurniture({...selected,width,screenHeight,standHeight,height:screenHeight+standHeight,screenInches:inches})}}/>
             <NumberField label="Screen height" value={selected.screenHeight??84} min={20} max={RC-(selected.standHeight??27)} onChange={screenHeight=>updateFurniture({...selected,screenHeight,height:screenHeight+(selected.standHeight??27),screenInches:Math.round(Math.hypot(selected.width,screenHeight)/2.54)})}/>
             <NumberField label="Stand height" value={selected.standHeight??27} min={5} max={RC-(selected.screenHeight??84)} onChange={standHeight=>updateFurniture({...selected,standHeight,height:(selected.screenHeight??84)+standHeight})}/>
-          </div><small className="field-note">Width and length above set the exact screen width and stand footprint.</small></div>}
+          </div><small className="field-note">Width and length above set the exact screen width and stand footprint.</small>
+          {selected.supportId&&<button className="surface-center" onClick={()=>{const support=furniture.find(f=>f.id===selected.supportId);if(support)updateFurniture({...selected,x:support.x,y:support.y,rotation:support.rotation+180})}}>Center on TV unit</button>}</div>}
+          {selected.supportId&&<div className="surface-status">Placed on {furniture.find(f=>f.id===selected.supportId)?.name??'supporting furniture'} · {Math.round(furniture.find(f=>f.id===selected.supportId)?.height??0)} cm high</div>}
           {selected.kind==='rug'&&<div className="field-group"><h3>Rug shape & size</h3><Segmented value={selected.rugShape==='circle'?'circle':'rectangle'} options={[{value:'rectangle',label:'Rectangle'},{value:'circle',label:'Circle'}]} onChange={v=>{if(v==='circle')updateFurniture({...selected,rugShape:'circle',width:Math.min(selected.width,selected.depth),depth:Math.min(selected.width,selected.depth)});else updateField('rugShape','rectangle')}}/><div className="rug-presets"><button onClick={()=>rugPreset(200,160)}>200 × 160</button><button onClick={()=>rugPreset(160,230)}>160 × 230</button><button onClick={()=>rugPreset(200,300)}>200 × 300</button></div><small className="field-note">Use the dimension fields above for a custom size.</small></div>}
           {isMirrorKind(selected.kind)&&(()=>{const sp=mirrorSpecs[selected.kind as keyof typeof mirrorSpecs];return <div className="field-group mirror-panel"><h3>Mirror</h3>
             {sp.mounts.length>1&&<><span className="mini-label">Mounting</span><Segmented value={selected.mount??sp.mounts[0]} options={sp.mounts.map(m=>({value:m,label:m==='wall'?'Wall':m==='free'?'Freestanding':'Leaning'}))} onChange={setMount}/></>}
