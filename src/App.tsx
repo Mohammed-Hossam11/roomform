@@ -1,12 +1,13 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent, type ReactNode } from 'react'
-import { Armchair, Circle, Menu, Move, Pencil as PencilIcon, SlidersHorizontal, Sofa as SofaIcon, Upload as UploadIcon, Lightbulb, RectangleVertical, Search, Tv, BedDouble, Box, Check, ChevronDown, CircleAlert, CloudOff, Copy, Download, FilePlus2, Footprints, Gamepad2, Grid3X3, House, Layers3, LayoutGrid, LoaderCircle, Maximize2, Monitor, Paintbrush, Pencil, Plus, RectangleHorizontal, Redo2, RotateCw, Ruler, Save, Sofa, Sparkles, Sprout, Sun, Table2, Trash2, Undo2, Upload, View, X } from 'lucide-react'
+import { Armchair, Circle, Menu, Move, Pencil as PencilIcon, SlidersHorizontal, Sofa as SofaIcon, Upload as UploadIcon, Lightbulb, RectangleVertical, Search, Tv, BedDouble, Box, Check, ChevronDown, CircleAlert, CircleHelp, Compass, CloudOff, Copy, Download, FilePlus2, Footprints, Gamepad2, Grid3X3, House, Layers3, LayoutGrid, LoaderCircle, Maximize2, Monitor, Paintbrush, Pencil, Plus, RectangleHorizontal, Redo2, RotateCw, Ruler, Save, Sofa, Sparkles, Sprout, Sun, Table2, Trash2, Undo2, Upload, View, X } from 'lucide-react'
 import FloorPlan from './FloorPlan'
 import { anyDialogOpen, Modal, NumberField, Segmented, Toast, useDialogs } from './ui'
 type AddOptions={width:number;depth:number;height:number;rugShape?:'rectangle'|'circle';mount?:MirrorMount;chaise?:'left'|'right'}
 import type { CameraView } from './Room3D'
 import { clone, onMediaChange } from './compat'
 import { AppErrorBoundary } from './ErrorBoundary'
-import Home, { WelcomeIntro } from './Home'
+import Home from './Home'
+import { OnboardingTour, WelcomeSplash, shouldAutoTour, writeOnboarding, type OnboardingStatus } from './Onboarding'
 import { activeLayout, activeRoom, catalog, CATEGORIES, frameColors, isMirrorKind, lugoColors, lugoFabrics, mirrorDepth, mirrorSpecs, woodFinishes, type LugoFabric, type MirrorMount, createRoom, defaultAppearance, floorPresets, freshCopy, gamingPresets, isOutdoorKind, loadStudio, newFurniture, normalizeProject, normalizeStudio, palette, ROOM_LIMITS, rugColors, saveStudio, uid, wallPresets, type FloorMaterial, type Furniture, type FurnitureKind, type Material, type Project, type RoomType, type Studio, type WallName, type WallType } from './model'
 import { canSupport, clampInside, doorBlocked, findSupport, followSupport, isEligibleSupport, mountNearest, mountOnWall, nextWall, wallFrame, fitOpenings, inside, isSolid, openingIssues, overlaps, placeNear, resizeRoom, warnings } from './geometry'
 import { generateIdeas } from './generator'
@@ -113,9 +114,16 @@ export default function App() {
   const [studio,setStudio]=useState<Studio>(boot.studio)
   const [isNew,setIsNew]=useState(!!boot.isNew)
   const [home,setHome]=useState(true)
-  const [intro,setIntro]=useState(()=>{try{return !sessionStorage.getItem('roomform-welcomed')&&!window.matchMedia('(prefers-reduced-motion: reduce)').matches}catch{return false}})
-  const [introExit,setIntroExit]=useState(false)
-  useEffect(()=>{if(!intro)return;try{sessionStorage.setItem('roomform-welcomed','1')}catch{/* optional */}const fade=setTimeout(()=>setIntroExit(true),1050),done=setTimeout(()=>setIntro(false),1300);return()=>{clearTimeout(fade);clearTimeout(done)}},[intro])
+  // Splash on every page load; the tour opens by itself only for new visitors
+  // (no saved rooms from any version, no onboarding flag).
+  const [splash,setSplash]=useState(true),[tour,setTour]=useState(false),[helpMenu,setHelpMenu]=useState(false)
+  const autoTour=useRef(shouldAutoTour(!boot.isNew))
+  const splashLeave=()=>{if(autoTour.current){autoTour.current=false;setTour(true)}}
+  const splashDone=()=>setSplash(false)
+  useEffect(()=>{const t=setTimeout(()=>{splashLeave();setSplash(false)},6000);return()=>clearTimeout(t)},[]) // never get stuck on the splash
+  const finishTour=(status:OnboardingStatus)=>{writeOnboarding(status);setTour(false)}
+  const replayTour=()=>{setHelpMenu(false);setPanel(null);setTour(true)}
+  const onboarding=<>{tour&&<OnboardingTour onFinish={finishTour}/>}{splash&&<WelcomeSplash onLeave={splashLeave} onDone={splashDone}/>}</>
   const project=activeRoom(studio)
   /** Replaces the active room only; every other room is left untouched. */
   const setProject=(next:Project|((prev:Project)=>Project))=>setStudio(s=>{
@@ -471,11 +479,11 @@ export default function App() {
   const floor=layout.appearance.floor, floorKind=floorPresets[floor.material].kind
   const currentWallColor=layout.appearance.walls[wallTarget]
   if(home)return <>
-    <Home rooms={isNew?[]:studio.rooms} activeId={studio.activeRoomId} onContinue={()=>setHome(false)} onCreate={()=>setNewRoomOpen(true)} onOpen={openRoom} onRename={renameRoom} onDuplicate={duplicateRoom} onDelete={deleteRoom}/>
+    <Home rooms={isNew?[]:studio.rooms} activeId={studio.activeRoomId} onContinue={()=>setHome(false)} onCreate={()=>setNewRoomOpen(true)} onOpen={openRoom} onRename={renameRoom} onDuplicate={duplicateRoom} onDelete={deleteRoom} onTour={replayTour}/>
     {newRoomOpen&&<NewRoomModal onCreate={createNewRoom} onClose={()=>setNewRoomOpen(false)}/>}
     {dialogs.element}
     {toast&&<Toast message={toast.message} tone={toast.tone} onClose={()=>setToast(null)}/>}
-    {intro&&<WelcomeIntro exiting={introExit} onSkip={()=>{setIntroExit(true);setTimeout(()=>setIntro(false),240)}}/>}
+    {onboarding}
   </>
   return <div className="app-shell">
     <header className="topbar">
@@ -504,6 +512,7 @@ export default function App() {
         <ActionButton onClick={redo} title="Redo" disabled={!future.current.length}><Redo2 size={18}/></ActionButton>
         <button className="top-text-button" onClick={save}><Save size={16}/> Save</button>
         <div className="view-switch"><button className={view==='2d'?'active':''} onClick={()=>setView('2d')}><LayoutGrid size={16}/> 2D</button><button className={view==='3d'?'active':''} onClick={()=>setView('3d')}><View size={16}/> 3D</button></div>
+        <div className="export-wrap"><button className="top-text-button" onClick={()=>setHelpMenu(v=>!v)} aria-expanded={helpMenu} aria-haspopup="menu"><CircleHelp size={16}/> Help</button>{helpMenu&&<><button className="home-menu-dismiss" aria-label="Close help menu" onClick={()=>setHelpMenu(false)}/><div className="export-menu help-menu" role="menu"><span className="menu-label">Help</span><button role="menuitem" onClick={replayTour}><Compass size={14}/> Replay introduction</button></div></>}</div>
         <div className="export-wrap"><button className="primary-button" onClick={()=>setShowExport(v=>!v)}><Download size={16}/> Export <ChevronDown size={14}/></button>{showExport&&<div className="export-menu"><span className="menu-label">Export</span><button onClick={()=>exportAction('2d')}>Image (plan, dimensions or 3D)…</button><button onClick={()=>exportAction('room')}>Current room as JSON</button><button onClick={()=>exportAction('project')}>Entire project as JSON</button><hr/><span className="menu-label">Import (adds copies)</span><button onClick={()=>startImport('design')}><Upload size={14}/> Import design</button><button onClick={()=>startImport('room')}><Upload size={14}/> Import room</button><button onClick={()=>startImport('project')}><Upload size={14}/> Import complete project</button></div>}</div>
       </div>
     </header>
@@ -651,6 +660,8 @@ export default function App() {
           <button onClick={()=>{setPanel(null);startImport('room')}}><UploadIcon size={15}/> Room</button>
           <button onClick={()=>{setPanel(null);startImport('project')}}><UploadIcon size={15}/> Project</button>
         </div>
+        <span className="menu-label">Help</span>
+        <div className="menu-grid"><button onClick={replayTour}><Compass size={15}/> Replay introduction</button></div>
         <p className="menu-note">Designs are saved in this browser on this device. Use Project JSON to move them between your phone and laptop.</p>
       </div>
     </div>}
@@ -680,5 +691,6 @@ export default function App() {
     </Modal>}
     {dialogs.element}
     {toast&&<Toast message={toast.message} tone={toast.tone} onClose={()=>setToast(null)}/>}
+    {onboarding}
   </div>
 }

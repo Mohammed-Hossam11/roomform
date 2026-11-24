@@ -72,6 +72,8 @@ keep the two files in sync.
   `FloorPlan.tsx` (2D editor, pointer/pinch handling), `Room3D.tsx` (3D),
   `PlanArt.tsx` (shared 2D drawing, also used by PNG export), `Rooms.tsx`
   (room management), `ui.tsx` (dialogs, toasts, form controls),
+  `Onboarding.tsx` + `onboarding.css` (splash on every load, 4-step tour;
+  tour copy lives in `TOUR_STEPS`, completion flag `roomform-onboarding`),
   `style.css` (desktop styles first, then the `@media (max-width:820px)` mobile
   section at the end).
 

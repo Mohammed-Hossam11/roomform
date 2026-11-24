@@ -1,19 +1,19 @@
 import { useState } from 'react'
-import { ArrowRight, Copy, Ellipsis, House, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowRight, Compass, Copy, Ellipsis, House, Pencil, Plus, Trash2 } from 'lucide-react'
 import { RoomThumb } from './Rooms'
 import { type Project } from './model'
 
 type Props = {
   rooms: Project[]; activeId: string; onContinue: () => void; onCreate: () => void
-  onOpen: (id: string) => void; onRename: (id: string) => void; onDuplicate: (id: string) => void; onDelete: (id: string) => void
+  onOpen: (id: string) => void; onRename: (id: string) => void; onDuplicate: (id: string) => void; onDelete: (id: string) => void; onTour: () => void
 }
 const edited = (room: Project) => new Date(room.updatedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 
-export default function Home({ rooms, activeId, onContinue, onCreate, onOpen, onRename, onDuplicate, onDelete }: Props) {
+export default function Home({ rooms, activeId, onContinue, onCreate, onOpen, onRename, onDuplicate, onDelete, onTour }: Props) {
   const [menu, setMenu] = useState<string | null>(null)
   const recent = [...rooms].sort((a, b) => b.updatedAt - a.updatedAt)[0]?.id
   return <div className="home-page">
-    <header className="home-nav"><button className="home-wordmark" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Roomform home"><span className="home-mark"><House size={19}/></span>roomform<span>.</span></button><span>Interior design studio</span></header>
+    <header className="home-nav"><button className="home-wordmark" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} aria-label="Roomform home"><span className="home-mark"><House size={19}/></span>roomform<span>.</span></button><div className="home-nav-end"><span>Interior design studio</span><button className="home-tour" onClick={onTour}><Compass size={16}/> Take the Tour</button></div></header>
     <main className="home-main">
       <div className="home-hero"><div><span className="home-kicker">YOUR DESIGN STUDIO</span><h1>Welcome to Roomform</h1><p>Your spaces, your ideas, beautifully designed.</p></div><div className="home-hero-actions"><button className="home-create" onClick={onCreate}><Plus size={18}/> Create New Room</button>{rooms.length > 0 && <button className="home-continue" onClick={onContinue}>Continue Designing <ArrowRight size={17}/></button>}</div></div>
       {rooms.length ? <section className="home-spaces" aria-label="My Spaces"><div className="home-section-head"><div><span className="home-kicker">YOUR COLLECTION</span><h2>My Spaces</h2></div><span>{rooms.length} room{rooms.length === 1 ? '' : 's'}</span></div>
@@ -31,6 +31,3 @@ export default function Home({ rooms, activeId, onContinue, onCreate, onOpen, on
   </div>
 }
 
-export function WelcomeIntro({ onSkip, exiting }: { onSkip: () => void; exiting: boolean }) {
-  return <div className={`welcome-intro ${exiting ? 'welcome-exit' : ''}`} role="status" aria-label="Welcome to Roomform"><button className="welcome-skip" onClick={onSkip}>Skip</button><div className="welcome-center"><div className="welcome-logo">roomform<span>.</span></div><p>Design your space, your way.</p></div></div>
-}

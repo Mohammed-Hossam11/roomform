@@ -7,6 +7,7 @@
     <meta name="theme-color" content="#f6f5f2" />
     <meta name="description" content="Plan, compare, and preview your bedroom layouts in precise centimeters." />
     <title>Roomform — Bedroom Layout Designer</title>
+    <style>html{background:#fbfaf6}#load-fallback{animation:lf-show .3s ease 1.6s both}@keyframes lf-show{from{opacity:0}}</style>
   </head>
   <body>
     <div id="root"></div>
@@ -20,6 +21,7 @@
         function showFailure() {
           var fallback = document.getElementById('load-fallback');
           if (!fallback) return;
+          fallback.style.animation = 'none';
           document.getElementById('load-message').textContent = 'Roomform could not start on this browser. Please reload or update your browser.';
           document.getElementById('load-retry').style.display = 'inline-block';
         }
