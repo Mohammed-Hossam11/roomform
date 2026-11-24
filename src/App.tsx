@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState, type ChangeEvent, type Rea
 import { Armchair, Circle, Menu, Move, Pencil as PencilIcon, SlidersHorizontal, Sofa as SofaIcon, Upload as UploadIcon, Lightbulb, RectangleVertical, Search, Tv, BedDouble, Box, Check, ChevronDown, CircleAlert, CircleHelp, Compass, CloudOff, Copy, Download, FilePlus2, Footprints, Gamepad2, Grid3X3, House, Layers3, LayoutGrid, LoaderCircle, Maximize2, Monitor, Paintbrush, Pencil, Plus, RectangleHorizontal, Redo2, RotateCw, Ruler, Save, Sofa, Sparkles, Sprout, Sun, Table2, Trash2, Undo2, Upload, View, X } from 'lucide-react'
 import FloorPlan from './FloorPlan'
 import { anyDialogOpen, Modal, NumberField, Segmented, Toast, useDialogs } from './ui'
-type AddOptions={width:number;depth:number;height:number;rugShape?:'rectangle'|'circle';mount?:MirrorMount;chaise?:'left'|'right'}
+type AddOptions={width:number;depth:number;height:number;rugShape?:'rectangle'|'circle';mount?:MirrorMount;chaise?:'left'|'right';armDepth?:number}
 import type { CameraView } from './Room3D'
 import { readRealityPref, realityCapableDevice, saveRealityPref, type RealityRequest } from './Reality'
 import { clone, onMediaChange } from './compat'
@@ -10,7 +10,7 @@ import { AppErrorBoundary } from './ErrorBoundary'
 import Home from './Home'
 import { OnboardingTour, SPLASH_THIS_LOAD, WelcomeInvite, WelcomeSplash, readOnboarding, writeOnboarding, type OnboardingStatus } from './Onboarding'
 import { activeLayout, activeRoom, catalog, CATEGORIES, frameColors, isMirrorKind, lugoColors, lugoFabrics, mirrorDepth, mirrorSpecs, woodFinishes, type LugoFabric, type MirrorMount, createRoom, defaultAppearance, floorPresets, freshCopy, gamingPresets, isOutdoorKind, loadStudio, newFurniture, normalizeProject, normalizeStudio, palette, ROOM_LIMITS, rugColors, saveStudio, uid, wallPresets, type FloorMaterial, type Furniture, type FurnitureKind, type Material, type Project, type RoomType, type Studio, type WallName, type WallType } from './model'
-import { canSupport, clampInside, doorBlocked, findSupport, followSupport, isEligibleSupport, mountNearest, mountOnWall, nextWall, wallFrame, fitOpenings, inside, isSolid, openingIssues, overlaps, placeNear, resizeRoom, warnings } from './geometry'
+import { canSupport, clampInside, doorBlocked, isLShape, lArm, findSupport, followSupport, isEligibleSupport, mountNearest, mountOnWall, nextWall, wallFrame, fitOpenings, inside, isSolid, openingIssues, overlaps, placeNear, resizeRoom, warnings } from './geometry'
 import { generateIdeas } from './generator'
 import { export2D, export3D, exportRoomJson, exportStudioJson } from './export'
 import { defaultExportPrefs, ExportDialog, type ExportPrefs } from './ExportDialog'
@@ -20,7 +20,7 @@ import { fromCm, NewRoomModal, RoomsPanel, RoomStructure, toCm, type Unit } from
 import { floorDataUrl } from './textures'
 import { buildHaven, chaiseSide, officialHavenColors, clampGroup, fabricNames, groupOf, groupSize, havenColors, hvOf, mirrorGroup, resizeModule, rotateGroup, sameGroup, scaleGroup, translate, unionBounds, type Arrangement, type Fabric } from './sofa'
 
-const icons: Record<FurnitureKind,typeof BedDouble>={bed:BedDouble,wardrobe:Box,desk:Monitor,bedside:Table2,dresser:Table2,sofa:Armchair,shelf:Layers3,chair:Armchair,gaming:Gamepad2,haven:Sofa,shoe:Footprints,rug:RectangleHorizontal,custom:Maximize2,monitor:Monitor,vase:Circle,decor:Circle,'outdoor-sofa':Sofa,'garden-chair':Armchair,'outdoor-table':Table2,lounger:Sun,planter:Sprout,'mirror-rect':RectangleVertical,'mirror-arch':RectangleVertical,'mirror-round':Circle,'mirror-oval':Circle,'mirror-wavy':RectangleVertical,'mirror-organic':Circle,'mirror-vanity':RectangleVertical,'mirror-floor':RectangleVertical,'tv-unit':Tv,'tv-stand':Tv,'rattan-table':Table2,'lugo-chair':Armchair,'halo-table':Circle}
+const icons: Record<FurnitureKind,typeof BedDouble>={bed:BedDouble,wardrobe:Box,'wardrobe-l':Box,'wardrobe-l-mirror':Box,desk:Monitor,bedside:Table2,dresser:Table2,sofa:Armchair,shelf:Layers3,chair:Armchair,gaming:Gamepad2,haven:Sofa,shoe:Footprints,rug:RectangleHorizontal,custom:Maximize2,monitor:Monitor,vase:Circle,decor:Circle,'outdoor-sofa':Sofa,'garden-chair':Armchair,'outdoor-table':Table2,lounger:Sun,planter:Sprout,'mirror-rect':RectangleVertical,'mirror-arch':RectangleVertical,'mirror-round':Circle,'mirror-oval':Circle,'mirror-wavy':RectangleVertical,'mirror-organic':Circle,'mirror-vanity':RectangleVertical,'mirror-floor':RectangleVertical,'tv-unit':Tv,'tv-stand':Tv,'rattan-table':Table2,'lugo-chair':Armchair,'halo-table':Circle}
 const Room3D = lazy(() => import('./Room3D'))
 const copy=(p:Project):Project=>clone(p)
 const WALLS:WallName[]=['top','right','bottom','left']
@@ -37,14 +37,20 @@ function AddFurnitureModal({kind,roomName,maxSide,ceiling,preview,onAdd,onClose}
   const c=catalog.find(x=>x.kind===kind)!
   const mirror=isMirrorKind(kind), mounts=mirror?mirrorSpecs[kind as keyof typeof mirrorSpecs].mounts:[]
   const r=(v:number)=>String(Math.round(v*10)/10)
-  const [vals,setVals]=useState({width:r(c.width),depth:r(c.depth),height:r(c.height),diameter:r(kind==='mirror-round'?c.width:Math.min(c.width,c.depth))})
+  const lShape=kind==='wardrobe-l'||kind==='wardrobe-l-mirror'
+  const [vals,setVals]=useState({width:r(c.width),depth:r(c.depth),height:r(c.height),diameter:r(kind==='mirror-round'?c.width:Math.min(c.width,c.depth)),arm:r(c.extra?.armDepth??60)})
   const [rugShape,setRugShape]=useState<'rectangle'|'circle'>('rectangle')
   const [mount,setMount]=useState<MirrorMount>((c.extra?.mount as MirrorMount)??mounts[0]??'wall')
   const [chaise,setChaise]=useState<'left'|'right'>('right')
   const [error,setError]=useState('')
   type Key=keyof typeof vals
   const round=kind==='mirror-round'||kind==='halo-table'||(kind==='rug'&&rugShape==='circle')
-  const fields:{key:Key;label:string;hint?:string;lo:number;hi:number}[]=[
+  const fields:{key:Key;label:string;hint?:string;lo:number;hi:number}[]=lShape?[
+    {key:'width',label:'Side A length',hint:'Along the back wall',lo:80,hi:maxSide},
+    {key:'depth',label:'Side B length',hint:'Along the side wall',lo:80,hi:maxSide},
+    {key:'arm',label:'Wardrobe depth',hint:'Front to back of each side',lo:30,hi:100},
+    {key:'height',label:'Height',lo:60,hi:ceiling},
+  ]:[
     ...(round?[{key:'diameter' as Key,label:'Diameter',lo:10,hi:kind==='mirror-round'?Math.min(maxSide,ceiling):maxSide}]
       :[{key:'width' as Key,label:'Width',hint:'Side to side',lo:5,hi:maxSide},...(mirror?[]:[{key:'depth' as Key,label:'Length',hint:'Front to back',lo:5,hi:maxSide}])]),
     ...(kind==='rug'||kind==='mirror-round'?[]:[{key:'height' as Key,label:mirror?'Mirror height':'Height',lo:1,hi:ceiling}]),
@@ -56,7 +62,8 @@ function AddFurnitureModal({kind,roomName,maxSide,ceiling,preview,onAdd,onClose}
     if(kind==='mirror-round'){width=height=n('diameter')}
     else if(kind==='halo-table'){width=depth=n('diameter')}
     else if(kind==='rug'){height=c.height;if(rugShape==='circle')width=depth=n('diameter')}
-    const err=onAdd({width,depth,height,rugShape:kind==='rug'?rugShape:undefined,mount:mirror?mount:undefined,chaise:kind==='haven'?chaise:undefined})
+    if(lShape&&n('arm')>Math.min(width,depth)-20){setError('Wardrobe depth must be at least 20 cm less than the shorter side.');return}
+    const err=onAdd({width,depth,height,rugShape:kind==='rug'?rugShape:undefined,mount:mirror?mount:undefined,chaise:kind==='haven'?chaise:undefined,armDepth:lShape?n('arm'):undefined})
     if(err)setError(err)
   }
   return <Modal title={`${c.name} Dimensions`} subtitle={`Set the size before adding it to ${roomName}.`} onClose={onClose} sheet className="add-modal" leading={preview}>
@@ -68,25 +75,28 @@ function AddFurnitureModal({kind,roomName,maxSide,ceiling,preview,onAdd,onClose}
         {fields.map(f=><label key={f.key} className="modal-field"><span>{f.label} <small>(cm)</small></span><input type="number" inputMode="decimal" step="any" enterKeyHint="done" value={vals[f.key]} onChange={e=>{setVals(v=>({...v,[f.key]:e.target.value}));setError('')}}/>{f.hint&&<em>{f.hint}</em>}</label>)}
       </div>
       {kind==='haven'&&<small className="field-note">Added as grouped Cloud Haven sections, scaled to this overall size.</small>}
+      {lShape&&<small className="field-note">A corner unit: Side A runs along the back, Side B along the left. Rotate it to fit any corner.</small>}
       {mirror&&mount==='wall'&&<small className="field-note">Hung on the nearest free solid wall — adjust the wall and height after adding.</small>}
       {error&&<div className="modal-error" role="alert"><CircleAlert size={16}/>{error}</div>}
       <div className="modal-actions"><button type="button" className="ghost-button" onClick={onClose}>Cancel</button><button type="submit" className="primary-button"><Plus size={16}/> Add to Room</button></div>
     </form>
   </Modal>
 }
-function EditSizeModal({item,maxSide,ceiling,onApply,onClose}:{item:Furniture;maxSide:number;ceiling:number;onApply:(w:number,d:number,h:number)=>string|null;onClose:()=>void}) {
+function EditSizeModal({item,maxSide,ceiling,onApply,onClose}:{item:Furniture;maxSide:number;ceiling:number;onApply:(w:number,d:number,h:number,arm?:number)=>string|null;onClose:()=>void}) {
+  const lShape=isLShape(item)
   const mirror=isMirrorKind(item.kind), roundMirror=item.kind==='mirror-round', roundTable=item.kind==='halo-table'
   const rugCircle=item.kind==='rug'&&item.rugShape==='circle', rug=item.kind==='rug'
-  type Key='length'|'width'|'height'|'diameter'
+  type Key='length'|'width'|'height'|'diameter'|'arm'
   const fields:{key:Key;label:string;hint?:string;lo:number;hi:number}[]=
-    roundMirror?[{key:'diameter',label:'Diameter',lo:10,hi:Math.min(maxSide,ceiling)}]
+    lShape?[{key:'width',label:'Side A length',hint:'Along the back wall',lo:80,hi:maxSide},{key:'length',label:'Side B length',hint:'Along the side wall',lo:80,hi:maxSide},{key:'arm',label:'Wardrobe depth',hint:'Front to back of each side',lo:30,hi:100},{key:'height',label:'Height',lo:60,hi:ceiling}]
+    :roundMirror?[{key:'diameter',label:'Diameter',lo:10,hi:Math.min(maxSide,ceiling)}]
     :mirror?[{key:'width',label:'Width',hint:'Side to side',lo:10,hi:maxSide},{key:'height',label:'Height',hint:'Mirror height',lo:10,hi:ceiling}]
     :roundTable?[{key:'diameter',label:'Diameter',lo:10,hi:maxSide},{key:'height',label:'Height',lo:1,hi:ceiling}]
     :rugCircle?[{key:'diameter',label:'Diameter',lo:5,hi:maxSide}]
     :rug?[{key:'length',label:'Length',hint:'Front to back',lo:5,hi:maxSide},{key:'width',label:'Width',hint:'Side to side',lo:5,hi:maxSide}]
     :[{key:'length',label:'Length',hint:'Front to back',lo:5,hi:maxSide},{key:'width',label:'Width',hint:'Side to side',lo:5,hi:maxSide},{key:'height',label:'Height',lo:1,hi:ceiling}]
   const r=(v:number)=>String(Math.round(v*10)/10)
-  const [vals,setVals]=useState<Record<Key,string>>({length:r(item.depth),width:r(item.width),height:r(item.height),diameter:r(roundMirror?item.width:Math.min(item.width,item.depth))})
+  const [vals,setVals]=useState<Record<Key,string>>({length:r(item.depth),width:r(item.width),height:r(item.height),diameter:r(roundMirror?item.width:Math.min(item.width,item.depth)),arm:r(lArm(item))})
   const [error,setError]=useState('')
   const submit=()=>{
     for(const f of fields){const v=Number(vals[f.key]);const msg=!Number.isFinite(v)||v<=0?`${f.label} must be a positive number.`:v<f.lo?`${f.label} must be at least ${f.lo} cm.`:v>f.hi?`${f.label} cannot exceed ${Math.round(f.hi)} cm.`:'';if(msg){setError(msg);return}}
@@ -97,7 +107,8 @@ function EditSizeModal({item,maxSide,ceiling,onApply,onClose}:{item:Furniture;ma
     else if(roundTable){w=d=n('diameter');h=n('height')}
     else if(rugCircle){w=d=n('diameter')}
     else {d=n('length');w=n('width');if(!rug)h=n('height')}
-    const res=onApply(w,d,h)
+    if(lShape&&n('arm')>Math.min(w,d)-20){setError('Wardrobe depth must be at least 20 cm less than the shorter side.');return}
+    const res=onApply(w,d,h,lShape?n('arm'):undefined)
     if(res)setError(res); else onClose()
   }
   return <Modal title={`Edit ${item.name} Dimensions`} subtitle="Exact sizes in centimeters." onClose={onClose}>
@@ -241,6 +252,7 @@ export default function App() {
     if(f.kind==='tv-stand'){g.screenHeight=Math.max(20,o.height-(f.standHeight??27));g.screenInches=Math.round(Math.hypot(g.width,g.screenHeight)/2.54)}
     if(f.kind==='rug'){g.rugShape=o.rugShape??'rectangle';if(g.rugShape==='circle')g={...g,width:Math.min(g.width,g.depth),depth:Math.min(g.width,g.depth)}}
     if(isMirrorKind(f.kind)&&o.mount){g.mount=o.mount;g.depth=mirrorDepth(o.mount,g.height);if(o.mount!=='wall')g.wall=undefined}
+    if(isLShape(f)&&o.armDepth)g.armDepth=o.armDepth
     return g
   }
   const sizeText=(o?:AddOptions)=>o?(o.rugShape==='circle'||o.width===o.depth&&(o as AddOptions).rugShape!==undefined?`⌀ ${o.width} cm`:`${o.width} × ${o.depth} cm`):''
@@ -390,7 +402,7 @@ export default function App() {
     if(!fitted){setNotice(`There is not enough space to rotate ${selected.name} here.`);return}
     updateFurniture(fitted)
   }
-  const applySize=(w:number,d:number,h:number):string|null=>{
+  const applySize=(w:number,d:number,h:number,arm?:number):string|null=>{
     if(!selected)return null
     if(grouped){
       const before=unionBounds(members), scaled=scaleGroup(members,w,d,h), after=unionBounds(scaled)
@@ -400,6 +412,7 @@ export default function App() {
       updateMany(t);return null
     }
     const cand={...resizeModule(selected,w,d,h)}
+    if(isLShape(cand))cand.armDepth=arm??Math.min(lArm(selected),Math.min(w,d)-20)
     if(cand.kind==='tv-stand'){cand.screenHeight=Math.max(20,h-(cand.standHeight??27));cand.screenInches=Math.round(Math.hypot(w,cand.screenHeight)/2.54)}
     const others=furniture.filter(f=>f.id!==selected.id)
     const res=isSolid(cand)?placeNear(cand,others,project):(()=>{const c=clampInside(cand,project);return c?{item:c,free:true}:null})()
@@ -557,6 +570,7 @@ export default function App() {
           <label className="text-field"><span>Furniture name</span><input value={selected.name} onChange={e=>updateField('name',e.target.value)}/></label>
           <div className="field-group"><h3>Dimensions <button className="link-button" onClick={()=>setSizeOpen(true)}><Ruler size={13}/> Exact size</button></h3><div className="field-grid">{selected.kind==='mirror-round'?<NumberField label="Diameter" value={selected.width} min={10} max={RC} onChange={v=>updateField('width',v)}/>
             :isMirrorKind(selected.kind)?<><NumberField label="Width" value={selected.width} min={10} max={maxSide} onChange={v=>updateField('width',v)}/><NumberField label="Height" value={selected.height} min={10} max={RC} onChange={v=>updateField('height',v)}/></>
+            :isLShape(selected)?<><NumberField label="Side A" value={selected.width} min={80} max={maxSide} onChange={v=>updateField('width',v)}/><NumberField label="Side B" value={selected.depth} min={80} max={maxSide} onChange={v=>updateField('depth',v)}/><NumberField label="Wardrobe depth" value={lArm(selected)} min={30} max={Math.min(100,Math.min(selected.width,selected.depth)-20)} onChange={v=>updateField('armDepth',v)}/></>
             :(selected.kind==='rug'&&selected.rugShape==='circle')||selected.kind==='halo-table'?<NumberField label="Diameter" value={selected.width} min={10} max={maxSide} onChange={v=>updateField('width',v)}/>
             :<><NumberField label="Width" value={selected.width} min={10} max={maxSide} onChange={v=>updateField('width',v)}/><NumberField label="Length" value={selected.depth} min={10} max={maxSide} onChange={v=>updateField('depth',v)}/></>}
             {selected.kind!=='rug'&&!isMirrorKind(selected.kind)&&<NumberField label="Height" value={selected.height} min={1} max={RC} onChange={v=>updateField('height',v)}/>}</div></div>

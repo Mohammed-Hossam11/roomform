@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent, type WheelEvent } from 'react'
 import { Copy, Ruler, RotateCw, Trash2 } from 'lucide-react'
 import { activeLayout, type Furniture, type FurnitureKind, type Project } from './model'
-import { bounds, clampInside, exterior, inside, interior, isCircular, mountNearest, snapToWalls, warnings } from './geometry'
+import { bounds, clampInside, exterior, inside, interior, isCircular, mountNearest, snapToWalls, warnings, isLShape, lOutline } from './geometry'
 import { ALL_INCLUDE, buildDims, DimensionLayer, type MeasureMode } from './measure'
 import { FurnitureArt, FurnitureLabel, PlanDefs, RoomShell } from './PlanArt'
 import { clampGroup, groupOf, isHaven, magnetSnap, resizeModule, translate, unionBounds } from './sofa'
@@ -250,7 +250,9 @@ export default function FloorPlan(p: Props) {
         {support&&<rect x={-support.width/2-3*k} y={-support.depth/2-3*k} width={support.width+6*k} height={support.depth+6*k} rx={5*k} transform={`translate(${support.x} ${support.y}) rotate(${support.rotation})`} fill="#6a9b76" fillOpacity=".07" stroke="#6a9b76" strokeOpacity=".65" strokeWidth={1.2*k} strokeDasharray={`${4*k} ${3*k}`} pointerEvents="none"/>}
         {ordered.map(item => <g key={item.id} onPointerDown={e => selectDown(e, item)} style={{ cursor: dragging === 'move' && item.id === p.selectedId ? 'grabbing' : 'grab' }}>
           <FurnitureArt item={item} invalid={warnings(item, p.furniture, p.project).length > 0} />
-          {isCircular(item)
+          {isLShape(item)
+            ? <polygon points={lOutline(item).map(q => `${q.x},${q.y}`).join(' ')} transform={`translate(${item.x} ${item.y}) rotate(${item.rotation})`} fill="transparent" />
+            : isCircular(item)
             ? <ellipse cx={item.x} cy={item.y} rx={Math.max(item.width / 2, p.mobile ? 22 * k : 0)} ry={Math.max(item.depth / 2, p.mobile ? 22 * k : 0)} fill="transparent" />
             : <rect x={-Math.max(item.width, p.mobile ? 44 * k : 0) / 2} y={-Math.max(item.mount === 'wall' ? Math.max(item.depth, 14) + 6 : item.depth, p.mobile ? 44 * k : 0) / 2} width={Math.max(item.width, p.mobile ? 44 * k : 0)} height={Math.max(item.mount === 'wall' ? Math.max(item.depth, 14) + 6 : item.depth, p.mobile ? 44 * k : 0)} transform={`translate(${item.x} ${item.y}) rotate(${item.rotation})`} fill="transparent" />}
         </g>)}

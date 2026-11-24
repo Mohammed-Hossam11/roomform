@@ -60,3 +60,24 @@ export function mirrorOutline(kind: MirrorKind, w: number, h: number, rounded = 
   const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys)
   return pts.map(([x, y]) => [((x - x0) / (x1 - x0) - .5) * w, ((y - y0) / (y1 - y0) - .5) * h])
 }
+
+/** Door layout of an L-shaped corner wardrobe, in its local frame (cm; back =
+ *  -y, left = -x, corner at the back-left). Shared by the 2D plan and 3D so
+ *  both show the same doors, open shelving and mirror panel. */
+export type LRun = { doors: { a: number; b: number; mirror?: boolean }[]; shelf?: { a: number; b: number } }
+export function lWardrobeLayout(width: number, depth: number, arm: number, mirror: boolean): { back: LRun; side: LRun } {
+  const split = (a: number, b: number, target = 50) => { const n = Math.max(1, Math.round((b - a) / target)); return Array.from({ length: n }, (_, i) => ({ a: a + (b - a) * i / n, b: a + (b - a) * (i + 1) / n })) }
+  const bx0 = -width / 2 + arm, bx1 = width / 2
+  let back: LRun
+  if (mirror) {
+    const len = bx1 - bx0
+    let n = Math.max(1, Math.round(len / 50))
+    if (n % 2 === 0) n = len / (n + 1) >= 38 ? n + 1 : Math.max(1, n - 1) // odd count, so one panel is central
+    const doors = Array.from({ length: n }, (_, i) => ({ a: bx0 + len * i / n, b: bx0 + len * (i + 1) / n, mirror: i === Math.floor(n / 2) }))
+    back = { doors }
+  } else {
+    const len = bx1 - bx0, s = len >= 110 ? Math.max(35, Math.min(50, Math.round(len * .24))) : 0
+    back = { doors: split(bx0, bx1 - s), shelf: s ? { a: bx1 - s, b: bx1 } : undefined }
+  }
+  return { back, side: { doors: split(-depth / 2 + arm, depth / 2) } }
+}

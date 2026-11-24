@@ -69,3 +69,28 @@ test('old saved and imported projects are normalized across every layout',()=>{
   imported.layouts[0].furniture[0].width=900
   assert.throws(()=>normalizeProject(imported,true),/too large/)
 })
+
+test('L-shaped wardrobe collides with its arms, not its empty corner',()=>{
+  const l={...newFurniture('wardrobe-l',200,200),width:200,depth:200,armDepth:60}
+  // the open notch is x 160..300, y 160..300 (front-right of the L)
+  const inNotch={...newFurniture('bedside',240,240),width:40,depth:40}
+  const onBackArm={...newFurniture('bedside',240,120),width:40,depth:40}
+  const onSideArm={...newFurniture('bedside',125,240),width:40,depth:40}
+  assert.equal(overlaps(l,inNotch),false)
+  assert.equal(overlaps(inNotch,l),false)
+  assert.equal(overlaps(l,onBackArm),true)
+  assert.equal(overlaps(l,onSideArm),true)
+  // rotated 90°: the notch moves with it
+  const r={...l,rotation:90}
+  assert.equal(overlaps(r,{...inNotch,x:160,y:240}),false)
+  assert.equal(overlaps(r,{...inNotch,x:240,y:240}),true)
+})
+
+test('L-shaped wardrobe keeps a sane arm depth through normalisation',()=>{
+  const p=initialProject()
+  p.layouts[0].furniture=[{...newFurniture('wardrobe-l-mirror',150,150),width:150,depth:150,armDepth:500}]
+  const out=normalizeProject(p,true).layouts[0].furniture[0]
+  assert.equal(out.kind,'wardrobe-l-mirror')
+  assert.ok(out.armDepth<=140 && out.armDepth>=30)
+  assertInterior(out)
+})

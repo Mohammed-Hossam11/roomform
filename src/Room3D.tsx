@@ -4,8 +4,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode }
 import * as THREE from 'three'
 import { DoorOpen, RotateCcw } from 'lucide-react'
 import { activeLayout, floorPresets, isMirrorKind, WALL_NAMES, type Door, type Furniture, type Project, type WallName } from './model'
-import { doorGeometry, exterior, wallFrame, wallInset, wallThickness } from './geometry'
-import { deskAccessories, mirrorOutline, type MirrorKind } from './parts'
+import { doorGeometry, exterior, lArm, wallFrame, wallInset, wallThickness } from './geometry'
+import { deskAccessories, lWardrobeLayout, mirrorOutline, type MirrorKind } from './parts'
 import { caneCanvas, fabricCanvas, floorCanvas, grainCanvas, GROUND_CM, groundCanvas, TILE_CM, upholsteryCanvas } from './textures'
 import { HAVEN, hvOf } from './sofa'
 import { RealityBar, RealityOverlay, RealityRig, type RealityQuality, type RealityRequest, type RealityStatus } from './Reality'
@@ -230,6 +230,67 @@ function GamingChair({item}:{item:Furniture}) {
     </group>
   </>
 }
+/** L-shaped corner wardrobe: wood carcass, recessed plinth and crown, cream
+ *  door runs on both inner fronts with slim dark handles; an open shelving bay
+ *  (plain version) or a full-height central mirror door (mirror version).
+ *  Local frame matches the plan: back = -z, left = -x, corner at back-left. */
+function LWardrobe3D({item,sceneKey}:{item:Furniture;sceneKey:string}) {
+  const mirror=item.kind==='wardrobe-l-mirror'
+  const W=item.width,D=item.depth,T=lArm(item)
+  const lay=useMemo(()=>lWardrobeLayout(W,D,T,mirror),[W,D,T,mirror])
+  const w=m(W),d=m(D),t=m(T),H=m(item.height)
+  const door=item.color, wood=item.accent??'#9a7552', dark='#2b2622'
+  const plinth=.08, crown=.035, dT=.02, gap=.0015, bodyH=H-plinth-crown
+  const doorH=bodyH-gap*2, doorY=plinth+bodyH/2
+  const zf=-d/2+t, xf=-w/2+t // inner front planes of the back and side runs
+  const shelf=lay.back.shelf, solidEnd=shelf?m(shelf.a):w/2
+  const handles=(doors:{a:number;b:number}[])=>doors.flatMap((dr,i)=>i%2===0&&doors[i+1]?[dr.b-3,dr.b+3]:i%2===0?[dr.a+4]:[])
+  const hY=plinth+doorH*.5
+  return <>
+    {/* carcass */}
+    <Box size={[solidEnd+w/2,bodyH,t-dT]} position={[(solidEnd-w/2)/2,plinth+bodyH/2,-d/2+(t-dT)/2]} color={wood} roughness={.6}/>
+    <Box size={[t-dT,bodyH,d/2-zf+dT]} position={[-w/2+(t-dT)/2,plinth+bodyH/2,(zf-dT+d/2)/2]} color={wood} roughness={.6}/>
+    {/* recessed plinth */}
+    <Box size={[w-.01,plinth,t-.05]} position={[.005,plinth/2,-d/2+(t-.05)/2]} color="#3a322b" roughness={.8}/>
+    <Box size={[t-.05,plinth,d-t]} position={[-w/2+(t-.05)/2,plinth/2,zf+(d-t)/2-.005]} color="#3a322b" roughness={.8}/>
+    {/* crown */}
+    <Box size={[w,crown,t+.01]} position={[0,H-crown/2,-d/2+(t+.01)/2]} color={wood} roughness={.5}/>
+    <Box size={[t+.01,crown,d-t-.01]} position={[-w/2+(t+.01)/2,H-crown/2,zf+.01+(d-t-.01)/2]} color={wood} roughness={.5}/>
+    {/* back run doors */}
+    {lay.back.doors.map((dr,i)=>{const x0=m(dr.a)+gap,x1=m(dr.b)-gap,cx=(x0+x1)/2,dw=x1-x0
+      return <group key={`b${i}`}>
+        <Box size={[dw,doorH,dT]} position={[cx,doorY,zf-dT/2]} color={door} roughness={.55}/>
+        {dr.mirror&&(()=>{const mw=dw-.07,mh=doorH-.08,fz=zf+.004,fc='#3b3631';return <>
+          <CubeCamera key={sceneKey} resolution={COARSE?128:256} frames={1} near={.05} far={60} position={[cx,doorY,zf+.002]}>
+            {(env)=><mesh><planeGeometry args={[mw,mh]}/><meshStandardMaterial envMap={env} color="#eef6f8" metalness={1} roughness={.015} envMapIntensity={1.25}/></mesh>}
+          </CubeCamera>
+          {/* slim dark frame around the mirror glass */}
+          <Box size={[mw+.016,.008,.006]} position={[cx,doorY+mh/2+.004,fz]} color={fc} roughness={.35}/>
+          <Box size={[mw+.016,.008,.006]} position={[cx,doorY-mh/2-.004,fz]} color={fc} roughness={.35}/>
+          <Box size={[.008,mh,.006]} position={[cx-mw/2-.004,doorY,fz]} color={fc} roughness={.35}/>
+          <Box size={[.008,mh,.006]} position={[cx+mw/2+.004,doorY,fz]} color={fc} roughness={.35}/>
+        </>})()}
+      </group>})}
+    {handles(lay.back.doors).map((x,i)=><Box key={`hb${i}`} size={[.012,.36,.014]} position={[m(x),hY,zf+.007]} color={dark} roughness={.3}/>)}
+    {/* side run doors */}
+    {lay.side.doors.map((dr,i)=>{const z0=m(dr.a)+gap,z1=m(dr.b)-gap
+      return <Box key={`s${i}`} size={[dT,doorH,z1-z0]} position={[xf-dT/2,doorY,(z0+z1)/2]} color={door} roughness={.55}/>})}
+    {handles(lay.side.doors).map((z,i)=><Box key={`hs${i}`} size={[.014,.36,.012]} position={[xf+.007,hY,m(z)]} color={dark} roughness={.3}/>)}
+    {/* open shelving bay at the free end of the back run */}
+    {shelf&&(()=>{const x0=m(shelf.a),x1=w/2,sw=x1-x0,cx=(x0+x1)/2,inner='#c9ad8c',n=Math.max(3,Math.floor(bodyH/.36)),step=bodyH/n
+      return <group>
+        <Box size={[sw,bodyH,.015]} position={[cx,plinth+bodyH/2,-d/2+.0075]} color={inner} roughness={.65}/>
+        <Box size={[.018,bodyH,t]} position={[x0+.009,plinth+bodyH/2,-d/2+t/2]} color={wood} roughness={.6}/>
+        <Box size={[.018,bodyH,t]} position={[x1-.009,plinth+bodyH/2,-d/2+t/2]} color={wood} roughness={.6}/>
+        {Array.from({length:n},(_,k)=>k).map(k=><Box key={k} size={[sw-.036,.018,t-.02]} position={[cx,plinth+k*step+.009,-d/2+(t-.02)/2+.015]} color={wood} roughness={.55}/>)}
+        {/* a few books and a vase */}
+        {[1,2].filter(k=>k<n).map(k=>{const y=plinth+k*step+.018;return <group key={`d${k}`}>
+          {[0,1,2,3].map(b=><Box key={b} size={[.03,.2-b%2*.03,.17]} position={[x0+.05+b*.034,y+(.2-b%2*.03)/2,-d/2+.1]} color={['#7d5a46','#d9cdb6','#556b5f','#b8865b'][b]} roughness={.8}/>)}
+        </group>})}
+        {n>3&&<Cyl r={.045} r2={.035} h={.16} position={[cx+sw*.15,plinth+3*step+.018+.08,-d/2+t*.5]} color="#e9e3d6" roughness={.4}/>}
+      </group>})()}
+  </>
+}
 function SceneFurniture({item,roomWidth,roomDepth,sceneKey='',supportHeight=0,hasMonitor=false}:{item:Furniture;roomWidth:number;roomDepth:number;sceneKey?:string;supportHeight?:number;hasMonitor?:boolean}) {
   const w=m(item.width),d=m(item.depth),h=m(item.height)
   const x=m(item.x-roomWidth/2),z=m(item.y-roomDepth/2)
@@ -242,6 +303,7 @@ function SceneFurniture({item,roomWidth,roomDepth,sceneKey='',supportHeight=0,ha
     case 'haven': body=<HavenModule item={item}/>; break
     case 'tv-unit': body=<TVUnit item={item}/>; break
     case 'tv-stand': body=<TVWithStand item={item}/>; break
+    case 'wardrobe-l': case 'wardrobe-l-mirror': body=<LWardrobe3D item={item} sceneKey={sceneKey}/>; break
     case 'monitor': body=<>
       <Box size={[w*.3,.012,d*.72]} position={[0,.006,d*.08]} color="#4b5358"/>
       <Box size={[.025,h*.27,.025]} position={[0,h*.135,0]} color="#596268"/>

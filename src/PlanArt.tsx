@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { floorPresets, isMirrorKind, type Appearance, type Furniture, type Outdoor, type Project, type WallName } from './model'
-import { doorGeometry, exterior, wallFrame, wallInset, wallPoint, wallThickness } from './geometry'
-import { deskAccessories, mirrorOutline, type MirrorKind } from './parts'
+import { doorGeometry, exterior, isLShape, lArm, lOutline, wallFrame, wallInset, wallPoint, wallThickness } from './geometry'
+import { deskAccessories, lWardrobeLayout, mirrorOutline, type MirrorKind } from './parts'
 import { hvOf } from './sofa'
 import { floorDataUrl, GROUND_CM, groundDataUrl, TILE_CM } from './textures'
 
@@ -155,7 +155,37 @@ export function RoomShell({ project, appearance, showGrid, showMeasurements, k =
 }
 
 const OUTLINE = '#4a4f49'
+/** Top view of an L-shaped corner wardrobe: the true L outline, a door strip
+ *  along both inner fronts divided per door, handles, open shelving and the
+ *  mirror panel (pale blue, labelled). */
+function LWardrobePlan({ item, invalid }: { item: Furniture; invalid: boolean }) {
+  const w = item.width, d = item.depth, t = lArm(item), mirror = item.kind === 'wardrobe-l-mirror'
+  const wood = item.accent ?? '#9a7552', band = Math.min(4, t * .1)
+  const pts = lOutline(item).map(p => `${p.x},${p.y}`).join(' ')
+  const lay = lWardrobeLayout(w, d, t, mirror)
+  const by = -d / 2 + t, sx = -w / 2 + t // inner front lines
+  const handles = (doors: { a: number; b: number }[]) => doors.flatMap((dr, i) => i % 2 === 0 && doors[i + 1] ? [dr.b - 3, dr.b + 3] : i % 2 === 0 ? [dr.a + 4] : [])
+  return <g transform={`translate(${item.x} ${item.y}) rotate(${item.rotation})`}>
+    <polygon points={pts} fill={item.color} stroke={invalid ? '#d0634b' : wood} strokeOpacity={invalid ? .9 : .85} strokeWidth={invalid ? 1.6 : 1.2} strokeLinejoin="round" />
+    <line x1={-w / 2 + 2} y1={-d / 2 + 2} x2={sx - 1} y2={by - 1} stroke={wood} strokeOpacity=".35" strokeWidth=".8" strokeDasharray="3 3" />
+    {lay.back.shelf && <g>
+      <rect x={lay.back.shelf.a} y={-d / 2 + 1.5} width={lay.back.shelf.b - lay.back.shelf.a - 1.5} height={t - 1.5} fill={tint(item.color, .86)} stroke={wood} strokeOpacity=".6" strokeWidth=".7" />
+      {[.3, .55, .8].map(q => <line key={q} x1={lay.back.shelf!.a + 3} x2={lay.back.shelf!.b - 4} y1={-d / 2 + t * q} y2={-d / 2 + t * q} stroke={wood} strokeOpacity=".55" strokeWidth=".8" />)}
+    </g>}
+    {lay.back.doors.map((dr, i) => <rect key={`b${i}`} x={dr.a + .4} y={by - band} width={dr.b - dr.a - .8} height={band} fill={dr.mirror ? '#cfe3ea' : tint(item.color, .93)} stroke={dr.mirror ? '#6f9aaa' : wood} strokeOpacity=".75" strokeWidth=".6" />)}
+    {lay.side.doors.map((dr, i) => <rect key={`s${i}`} x={sx - band} y={dr.a + .4} width={band} height={dr.b - dr.a - .8} fill={tint(item.color, .93)} stroke={wood} strokeOpacity=".75" strokeWidth=".6" />)}
+    {handles(lay.back.doors).map((x, i) => <line key={`hb${i}`} x1={x} x2={x} y1={by + 1} y2={by + 3.5} stroke="#2e2a26" strokeWidth="1.3" strokeLinecap="round" />)}
+    {handles(lay.side.doors).map((y, i) => <line key={`hs${i}`} y1={y} y2={y} x1={sx + 1} x2={sx + 3.5} stroke="#2e2a26" strokeWidth="1.3" strokeLinecap="round" />)}
+    {mirror && lay.back.doors.filter(dr => dr.mirror).map(dr => <g key="m">
+      <rect x={dr.a + 2} y={-d / 2 + 3} width={dr.b - dr.a - 4} height={t - band - 5} rx="2" fill="#dcebf0" stroke="#8fb3c0" strokeWidth=".7" opacity=".9" />
+      <path d={`M${dr.a + 6} ${by - band - 4} L${dr.a + 14} ${-d / 2 + 6} M${dr.a + 12} ${by - band - 4} L${dr.a + 20} ${-d / 2 + 6}`} stroke="#ffffff" strokeWidth="1.2" opacity=".9" />
+      <text x={(dr.a + dr.b) / 2} y={-d / 2 + (t - band) / 2 + 1} textAnchor="middle" dominantBaseline="middle" fontSize={Math.min(7, (dr.b - dr.a) / 5.5)} fontWeight={700} letterSpacing=".6" fill="#4f7d8d">MIRROR</text>
+    </g>)}
+  </g>
+}
+
 export function FurnitureArt({ item, invalid = false, prefix = 'p' }: { item: Furniture; invalid?: boolean; prefix?: string }) {
+  if (isLShape(item)) return <LWardrobePlan item={item} invalid={invalid} />
   const { width: w, depth: d } = item
   const stroke = invalid ? '#d0634b' : OUTLINE, so = invalid ? .9 : .35, sw = invalid ? 1.6 : 1
   const body = <rect x={-w/2} y={-d/2} width={w} height={d} rx={Math.min(5,w/10,d/10)} fill={item.color} stroke={stroke} strokeOpacity={so} strokeWidth={sw} />
@@ -350,6 +380,14 @@ export function FurnitureLabel({ item, k = 1 }: { item: Furniture; k?: number })
   const avail = rot < 10 || rot > 170 ? item.width : Math.abs(rot - 90) < 10 ? item.depth : Math.min(item.width, item.depth)
   const size = Math.min(12 * k, (avail - 6) / (item.name.length * .56))
   if (size < 7 * k) return null
+  if (isLShape(item)) { // along the side arm (the back arm carries the mirror marking)
+    const t = lArm(item), a = item.rotation * Math.PI / 180, lx = -item.width / 2 + t / 2, ly = t / 2
+    const x = item.x + lx * Math.cos(a) - ly * Math.sin(a), y = item.y + lx * Math.sin(a) + ly * Math.cos(a)
+    const s2 = Math.min(10 * k, t * .3, (item.depth - t - 10) / (item.name.length * .56))
+    if (s2 < 5 * k) return null
+    let ang = (((item.rotation + 90) % 360) + 360) % 360; if (ang > 90 && ang < 270) ang -= 180
+    return <text transform={`rotate(${ang} ${x} ${y})`} x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize={s2} fontWeight={600} fill="#2f3b35" stroke="#fffdf8" strokeOpacity=".85" strokeWidth={s2 * .28} paintOrder="stroke" strokeLinejoin="round" pointerEvents="none">{item.name}</text>
+  }
   return <text x={item.x} y={item.y} textAnchor="middle" dominantBaseline="middle" fontSize={size} fontWeight={600} fill="#2f3b35" stroke="#fffdf8" strokeOpacity=".85" strokeWidth={size * .28} paintOrder="stroke" strokeLinejoin="round" pointerEvents="none">{item.name}</text>
 }
 
@@ -365,6 +403,18 @@ export function LibraryPreview({ kind, color = '#26282b', accent }: { kind: stri
     </svg>
   }
   const wood = color, cane = accent ?? '#d8bd8c'
+  if (kind === 'wardrobe-l' || kind === 'wardrobe-l-mirror') {
+    const edge = accent ?? '#9a7552', door = color
+    return <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden>
+      <path d="M3 4 H29 V28 H3 Z" fill={edge} />
+      <path d="M4.2 5.2 H11 V26.8 H4.2 Z" fill={door} opacity=".82" />
+      {[11.6, 17.4, 23.2].map(x => <rect key={x} x={x} y="5.2" width="5.2" height="21.6" fill={kind === 'wardrobe-l-mirror' && x === 17.4 ? '#cfe3ea' : door} />)}
+      {kind === 'wardrobe-l' && <><rect x="23.2" y="5.2" width="5.2" height="21.6" fill={tint(edge, 1.3)} />{[10, 15, 20].map(y => <rect key={y} x="23.2" y={y} width="5.2" height=".9" fill={edge} />)}</>}
+      {kind === 'wardrobe-l-mirror' && <path d="M18.4 10 L21 7 M18.4 14 L22 10" stroke="#fff" strokeWidth=".8" />}
+      <path d="M16.9 13 V18 M22.7 13 V18" stroke="#2b2622" strokeWidth=".9" strokeLinecap="round" />
+      <rect x="3" y="27" width="26" height="1.6" fill="#3b332b" />
+    </svg>
+  }
   switch (kind) {
     case 'tv-stand': return <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden><rect x="2" y="3" width="28" height="19" rx="1.5" fill="#202428" stroke="#626e73" strokeWidth=".8"/><rect x="4" y="5" width="24" height="15" rx=".5" fill="#172c3e"/><path d="M5 18 Q12 8 25 7" stroke="#6f9ab0" strokeOpacity=".65" fill="none"/><path d="M9 22 L7 29 M23 22 L25 29" stroke="#252b2e" strokeWidth="1.7" strokeLinecap="round"/></svg>
     case 'tv-unit': return <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden><rect x="2" y="10" width="28" height="12" rx="1.5" fill={wood}/><rect x="3.5" y="11.5" width="8" height="9" fill={cane}/><rect x="20.5" y="11.5" width="8" height="9" fill={cane}/><rect x="12.5" y="11.5" width="7" height="9" fill="#5a4330"/><line x1="12.5" y1="16" x2="19.5" y2="16" stroke={wood}/><path d="M5 22 L4 27 M27 22 L28 27" stroke={wood} strokeWidth="1.4" strokeLinecap="round"/></svg>

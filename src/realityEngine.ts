@@ -30,7 +30,7 @@ export type Support = { ok: true; suggested: Quality; gpu: string } | { ok: fals
 export type Report = (done: number, label: string) => void // done: 0..1 of this session's share
 
 /** Furniture kinds whose plain-coloured boxes are wood (grain relief + satin finish). */
-const WOODY = new Set(['bed', 'wardrobe', 'desk', 'chair', 'dresser', 'bedside', 'shelf', 'shoe', 'tv-unit', 'halo-table', 'rattan-table', 'outdoor-table', 'garden-chair'])
+const WOODY = new Set(['bed', 'wardrobe', 'wardrobe-l', 'wardrobe-l-mirror', 'desk', 'chair', 'dresser', 'bedside', 'shelf', 'shoe', 'tv-unit', 'halo-table', 'rattan-table', 'outdoor-table', 'garden-chair'])
 const SOFT = new Set(['sofa', 'haven', 'lugo-chair', 'outdoor-sofa', 'lounger'])
 
 export function checkSupport(gl: THREE.WebGLRenderer): Support {

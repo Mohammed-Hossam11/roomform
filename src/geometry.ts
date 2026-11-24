@@ -43,6 +43,28 @@ function toWall(wall: WallName, project: RoomLike, p: Point) {
   return { along: dx*f.ax+dy*f.ay, inward: dx*f.nx+dy*f.ny }
 }
 
+/** L-shaped corner wardrobes. Local frame: back = -y, left = -x; the corner
+ *  sits at the back-left, the open notch at the front-right. */
+export const isLShape = (f: Pick<Furniture,'kind'>) => f.kind === 'wardrobe-l' || f.kind === 'wardrobe-l-mirror'
+export function lArm(f: Pick<Furniture,'width'|'depth'|'armDepth'>) { return Math.max(1, Math.min(f.armDepth ?? 60, Math.min(f.width, f.depth) - 10)) }
+/** The solid parts of an item's footprint as rotated rectangles in room cm:
+ *  two plain arms for an L, otherwise the item itself. Used for collisions
+ *  and door-swing checks so the empty corner of the L stays usable. */
+export function footprintParts(f: Furniture): Furniture[] {
+  if (!isLShape(f)) return [f]
+  const t = lArm(f), a = f.rotation * Math.PI / 180, c = Math.cos(a), s = Math.sin(a)
+  const at = (lx: number, ly: number) => ({ x: f.x + lx * c - ly * s, y: f.y + lx * s + ly * c })
+  return [
+    { ...f, kind: 'custom', ...at(0, -f.depth / 2 + t / 2), width: f.width, depth: t },                        // back arm (Side A)
+    { ...f, kind: 'custom', ...at(-f.width / 2 + t / 2, t / 2), width: t, depth: Math.max(1, f.depth - t) },     // side arm (Side B)
+  ]
+}
+/** Outline of the true footprint in the item's local frame (cm). */
+export function lOutline(f: Pick<Furniture,'width'|'depth'|'armDepth'>): Point[] {
+  const w = f.width / 2, d = f.depth / 2, t = lArm(f)
+  return [{ x: -w, y: -d }, { x: w, y: -d }, { x: w, y: -d + t }, { x: -w + t, y: -d + t }, { x: -w + t, y: d }, { x: -w, y: d }]
+}
+
 export function corners(f: Furniture): Point[] {
   const angle = f.rotation * Math.PI / 180, c = Math.cos(angle), s = Math.sin(angle)
   return [[-f.width/2,-f.depth/2],[f.width/2,-f.depth/2],[f.width/2,f.depth/2],[-f.width/2,f.depth/2]].map(([dx,dy]) => ({ x: f.x + dx*c - dy*s, y: f.y + dx*s + dy*c }))
@@ -70,7 +92,8 @@ function circleHits(c: Furniture, o: Furniture, gap: number) {
   const qx = Math.max(-o.width / 2, Math.min(o.width / 2, lx)), qy = Math.max(-o.depth / 2, Math.min(o.depth / 2, ly))
   return Math.hypot(lx - qx, ly - qy) < r
 }
-export function overlaps(a: Furniture, b: Furniture, gap = 0) {
+export function overlaps(a: Furniture, b: Furniture, gap = 0): boolean {
+  if (isLShape(a) || isLShape(b)) return footprintParts(a).some(pa => footprintParts(b).some(pb => overlaps(pa, pb, gap)))
   if (isCircular(a)) return circleHits(a, b, gap)
   if (isCircular(b)) return circleHits(b, a, gap)
   const aa = corners(a), bb = corners(b)
@@ -168,7 +191,8 @@ export function doorGeometry(project: Project, door: Door) {
     hingeAlong, freeAlong, sign,
   }
 }
-function edgeSamples(f: Furniture) {
+function edgeSamples(f: Furniture): Point[] {
+  if (isLShape(f)) return footprintParts(f).flatMap(edgeSamples)
   const pts = corners(f), out: Point[] = [...pts, { x: f.x, y: f.y }]
   for (let i=0;i<4;i++) for (let t=1;t<10;t++) { const p=pts[i], q=pts[(i+1)%4]; out.push({ x:p.x+(q.x-p.x)*t/10, y:p.y+(q.y-p.y)*t/10 }) }
   return out
