@@ -1,5 +1,7 @@
 # Roomform — instructions for coding agents (Codex and others)
 
+Local project: `C:\Users\Mohammed Abbas\OneDrive\Desktop\Engezhaly\Websites\RoomForm`
+
 Roomform is a React + TypeScript + Vite interior-design studio (2D SVG plan +
 React Three Fiber 3D) that runs entirely in the browser and is published to
 GitHub Pages. These rules apply to **every** change. `CLAUDE.md` contains the
