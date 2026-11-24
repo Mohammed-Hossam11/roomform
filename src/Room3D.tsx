@@ -1,6 +1,6 @@
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber'
 import { CubeCamera, Html, OrbitControls, RoundedBox } from '@react-three/drei'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import * as THREE from 'three'
 import { DoorOpen, RotateCcw } from 'lucide-react'
 import { activeLayout, floorPresets, isMirrorKind, WALL_NAMES, type Door, type Furniture, type Project, type WallName } from './model'
@@ -8,8 +8,6 @@ import { doorGeometry, exterior, lArm, wallFrame, wallInset, wallThickness } fro
 import { deskAccessories, lWardrobeLayout, mirrorOutline, type MirrorKind } from './parts'
 import { caneCanvas, fabricCanvas, floorCanvas, grainCanvas, GROUND_CM, groundCanvas, TILE_CM, upholsteryCanvas } from './textures'
 import { HAVEN, hvOf } from './sofa'
-import { RealityBar, RealityOverlay, RealityRig, type RealityQuality, type RealityRequest, type RealityStatus } from './Reality'
-import { anyDialogOpen } from './ui'
 
 const m=(cm:number)=>cm/100
 /** Phones/tablets: lighter shadow maps and mirror reflections, same geometry. */
@@ -405,7 +403,7 @@ function SceneFurniture({item,roomWidth,roomDepth,sceneKey='',supportHeight=0,ha
       {(item.kind==='dresser'||item.kind==='bedside'||item.kind==='shelf') && [0.3,0.53,0.76].map(q=><Box key={q} size={[w*.75,.016,.015]} position={[0,h*q,d/2+.01]} color="#7c6552"/>)}
     </>
   }
-  return <group position={[x,m(supportHeight),z]} rotation={[0,-item.rotation*Math.PI/180,0]} userData={{furnitureKind:item.kind}}>{body}</group>
+  return <group position={[x,m(supportHeight),z]} rotation={[0,-item.rotation*Math.PI/180,0]}>{body}</group>
 }
 export type CameraView='overview'|'inside'|'top'|'exterior'
 type Orbit={target:THREE.Vector3;update:()=>void;minDistance:number;maxDistance:number;maxPolarAngle:number;minPolarAngle:number;addEventListener:(t:'change',f:()=>void)=>void;removeEventListener:(t:'change',f:()=>void)=>void}
@@ -568,7 +566,7 @@ function Wall({wall,project,color,opacity,holes}:{wall:WallName;project:Project;
       </group>
     })}</>
   }
-  return <group userData={{surface:'wall'}}>{pieces.map((p,i)=>{const g=place(p.a,p.b,p.y0,p.y1,T);return <Box key={i} size={g.size} position={g.pos} color={color} opacity={opacity}/>})}</group>
+  return <>{pieces.map((p,i)=>{const g=place(p.a,p.b,p.y0,p.y1,T);return <Box key={i} size={g.size} position={g.pos} color={color} opacity={opacity}/>})}</>
 }
 const DOOR_ANIM_S=.65
 const ease=(t:number)=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2
@@ -670,34 +668,6 @@ function SlidingDoor({project,door,open,onToggle}:{project:Project;door:Door;ope
     <group ref={slide} rotation={[0,rotY,0]}>{panel('slide')}{hover&&<Html position={[0,1.3,0]} center zIndexRange={[20,0]}><div className="door-hint">{open?'Click to close':'Click to open'}</div></Html>}</group>
   </group>
 }
-/** Reality Mode daylight: sun entering through the first window or glass wall,
- *  soft area light at every window / glass wall, a faint sky fill and a warm
- *  interior bounce. Ambient light is mostly replaced by image-based lighting. */
-function RealityLights({project,outdoorOn,hq}:{project:Project;outdoorOn:boolean;hq:boolean}) {
-  const W=project.room.width,D=project.room.depth,w=m(W),d=m(D),h=m(project.room.ceiling)
-  const pt=(wall:WallName,along:number,inward:number,y=0)=>{const f=wallFrame(wall,project);return new THREE.Vector3(m(f.ox+f.ax*along+f.nx*inward-W/2),y,m(f.oy+f.ay*along+f.ny*inward-D/2))}
-  const openings=[
-    ...project.windows.map(wi=>({wall:wi.wall,mid:wi.start+wi.width/2,width:wi.width,bottom:wi.sill,height:wi.height})),
-  ].slice(0,6)
-  // Glass walls let the sun and sky in directly; the sun also enters through them.
-  const glassWall=WALL_NAMES.find(wl=>project.walls[wl].type==='glass')
-  const sunVia=openings[0]??(glassWall?{wall:glassWall,mid:wallFrame(glassWall,project).length/2}:null)
-  const span=Math.max(w,d), reach=Math.hypot(w,d)/2+1.2
-  let sun=new THREE.Vector3(-w*.6,span*1.2+3,d*.8)
-  if(sunVia){const c=pt(sunVia.wall,sunVia.mid,0),out=c.clone().sub(pt(sunVia.wall,sunVia.mid,100)).normalize(),dist=span+5;sun=new THREE.Vector3(c.x+out.x*dist,dist*.72,c.z+out.z*dist)}
-  return <>
-    <ambientLight intensity={.04}/>
-    <hemisphereLight args={['#eef3fa','#b3a790',outdoorOn?.34:.28]}/>
-    <directionalLight position={sun.toArray()} intensity={outdoorOn?2.6:2.4} color="#fff0dc" castShadow shadow-mapSize={hq?[4096,4096]:[2048,2048]} shadow-bias={-.00025} shadow-normalBias={.018} shadow-camera-near={.5} shadow-camera-far={sun.length()+reach*2} shadow-camera-left={-reach} shadow-camera-right={reach} shadow-camera-top={reach} shadow-camera-bottom={-reach}/>
-    {openings.map((o,i)=>{const inset=wallInset(project,o.wall)+2,y=m(o.bottom+o.height/2);return <WindowLight key={i} position={pt(o.wall,o.mid,inset,y)} look={pt(o.wall,o.mid,inset+100,y)} width={m(o.width)} height={m(o.height)} intensity={2.6}/>})}
-    <pointLight position={[0,h*.55,0]} intensity={.55} distance={span*2} decay={1.5} color="#ffe6c8"/>
-  </>
-}
-function WindowLight({position,look,width,height,intensity}:{position:THREE.Vector3;look:THREE.Vector3;width:number;height:number;intensity:number}) {
-  const ref=useRef<THREE.RectAreaLight>(null)
-  useLayoutEffect(()=>{ref.current?.lookAt(look)},[look])
-  return <rectAreaLight ref={ref} position={position} width={width} height={height} intensity={intensity} color="#edf3ff"/>
-}
 function OutdoorGround({project}:{project:Project}) {
   const ext=exterior(project), o=project.outdoor
   const tex=useMemo(()=>{
@@ -711,19 +681,9 @@ function OutdoorGround({project}:{project:Project}) {
   const W=project.room.width,D=project.room.depth
   const cx=m((ext.left+ext.right)/2-W/2), cz=m((ext.top+ext.bottom)/2-D/2)
   // Sits 3 cm below the interior floor so it never intersects the room's flooring.
-  return <mesh rotation={[-Math.PI/2,0,0]} position={[cx,-.03,cz]} receiveShadow userData={{surface:'ground'}}><planeGeometry args={[m(ext.right-ext.left),m(ext.bottom-ext.top)]}/><meshStandardMaterial map={tex} roughness={1}/></mesh>
+  return <mesh rotation={[-Math.PI/2,0,0]} position={[cx,-.03,cz]} receiveShadow><planeGeometry args={[m(ext.right-ext.left),m(ext.bottom-ext.top)]}/><meshStandardMaterial map={tex} roughness={1}/></mesh>
 }
-export default function Room3D({project,furniture,mode,resetKey=0,onReset,openDoors={},onToggleDoor,onToggleAll,reality=null,onRealityQuality,onExitReality,onCamera}:{project:Project;furniture:Furniture[];mode:CameraView;resetKey?:number;onReset?:()=>void;openDoors?:Record<string,boolean>;onToggleDoor?:(id:string)=>void;onToggleAll?:()=>void;reality?:RealityRequest|null;onRealityQuality?:(q:RealityQuality)=>void;onExitReality?:()=>void;onCamera?:(v:CameraView)=>void}) {
-  // Reality Mode: a visualisation layer over this same scene (see Reality.tsx).
-  const [rStatus,setRStatus]=useState<RealityStatus|null>(null)
-  const [realityLit,setRealityLit]=useState(false)
-  const [leaving,setLeaving]=useState(false)
-  const [realityDpr,setRealityDpr]=useState<number|null>(null)
-  useEffect(()=>{setRStatus(reality?{phase:'loading',pct:0,label:'Loading the rendering engine'}:null)},[reality])
-  const exitReality=()=>{if(leaving)return;setLeaving(true);setTimeout(()=>{setLeaving(false);onExitReality?.()},380)}
-  const exitRef=useRef(exitReality);exitRef.current=exitReality
-  useEffect(()=>{if(!reality)return;const k=(e:KeyboardEvent)=>{if(e.key==='Escape'&&!anyDialogOpen()){e.preventDefault();exitRef.current()}};window.addEventListener('keydown',k);return()=>window.removeEventListener('keydown',k)},[reality])
-  const realityReady=rStatus?.phase==='ready'
+export default function Room3D({project,furniture,mode,resetKey=0,onReset,openDoors={},onToggleDoor,onToggleAll}:{project:Project;furniture:Furniture[];mode:CameraView;resetKey?:number;onReset?:()=>void;openDoors?:Record<string,boolean>;onToggleDoor?:(id:string)=>void;onToggleAll?:()=>void}) {
   const W=project.room.width, D=project.room.depth
   const w=m(W),d=m(D)
   const {doors,windows,ac}=project
@@ -751,20 +711,19 @@ export default function Room3D({project,furniture,mode,resetKey=0,onReset,openDo
   const anyOpen=doors.some(dr=>openDoors[dr.id])
   // Mirrors re-capture their reflection when the room's contents or finishes change.
   const sceneKey=useMemo(()=>[furniture.map(f=>`${f.id}:${Math.round(f.x)}:${Math.round(f.y)}:${Math.round(f.rotation)}:${f.color}:${Math.round(f.width)}:${Math.round(f.height)}:${f.supportId??''}`).join(','),floor.material,floor.baseColor,JSON.stringify(appearance.walls),mode,JSON.stringify(project.walls),W,D].join('|'),[furniture,floor.material,floor.baseColor,appearance.walls,mode,project.walls,W,D])
-  return <div className={`three-stage${reality?' reality':''}${realityReady?' reality-ready':''}${leaving?' reality-leaving':''}`}>
-    <Canvas shadows="soft" dpr={realityDpr??(COARSE?[1,1.25]:[1,2])} gl={{preserveDrawingBuffer:true,antialias:!COARSE}} camera={{position:[5.6,4.1,5.8],fov:42,near:.05,far:300}}
+  return <div className="three-stage">
+    <Canvas shadows="soft" dpr={COARSE?[1,1.25]:[1,2]} gl={{preserveDrawingBuffer:true,antialias:!COARSE}} camera={{position:[5.6,4.1,5.8],fov:42,near:.05,far:300}}
       onCreated={({gl})=>{gl.toneMapping=THREE.NeutralToneMapping;gl.toneMappingExposure=1}}>
-      <color attach="background" args={[realityLit?(outdoorOn?'#dbe4e7':'#e4e0d8'):outdoorOn?'#dde7ea':'#e9eae6']}/>
+      <color attach="background" args={[outdoorOn?'#dde7ea':'#e9eae6']}/>
       {outdoorOn&&<fog attach="fog" args={['#dde7ea',Math.max(w,d)*3,Math.max(w,d)*7]}/>}
-      {realityLit?<RealityLights project={project} outdoorOn={outdoorOn} hq={rStatus?.phase!=='ready'||rStatus.quality==='high'}/>:<>
       <ambientLight intensity={outdoorOn?.55:.5}/><hemisphereLight args={[outdoorOn?'#eef6ff':'#fffdf8',outdoorOn?'#8f9a7a':'#a8a191',outdoorOn?1:.85]}/>
+      {mode==='inside'&&<mesh rotation={[Math.PI/2,0,0]} position={[0,h,0]}><planeGeometry args={[w+.1,d+.1]}/><meshStandardMaterial color="#f5f3ef" roughness={.95}/></mesh>}
       <directionalLight position={[-w*.6,Math.max(w,d)*1.2+3,d*.8]} intensity={outdoorOn?2.6:2.3} color="#fff6ea" castShadow shadow-mapSize={COARSE?[1024,1024]:[2048,2048]} shadow-bias={-.0004} shadow-normalBias={.02} shadow-camera-near={.5} shadow-camera-far={Math.max(w,d)*4+12} shadow-camera-left={-Math.max(4,w*.75)} shadow-camera-right={Math.max(4,w*.75)} shadow-camera-top={Math.max(4,d*.75)} shadow-camera-bottom={-Math.max(4,d*.75)}/>
       <directionalLight position={[w*.8,2.4,d*1.2]} intensity={.4} color="#eef3ff"/>
-      <pointLight position={[0,h-.25,0]} intensity={.5} distance={Math.max(w,d)*1.6} decay={1.6} color="#fff1dc"/></>}
-      {mode==='inside'&&<mesh rotation={[Math.PI/2,0,0]} position={[0,h,0]} userData={{surface:'ceiling'}}><planeGeometry args={[w+.1,d+.1]}/><meshStandardMaterial color="#f5f3ef" roughness={.95}/></mesh>}
+      <pointLight position={[0,h-.25,0]} intensity={.5} distance={Math.max(w,d)*1.6} decay={1.6} color="#fff1dc"/>
       <OutdoorGround project={project}/>
       <Box size={[w+.09,.09,d+.09]} position={[0,-.047,0]} color="#d9d6cf" />
-      <mesh rotation={[-Math.PI/2,0,0]} position={[0,.001,0]} receiveShadow userData={{surface:'floor',floorKind:floorPresets[floor.material].kind}}><planeGeometry args={[w,d]}/><meshStandardMaterial map={floorTex} roughness={floorPresets[floor.material].kind==='marble'||floorPresets[floor.material].kind==='tile'?.45:.75}/></mesh>
+      <mesh rotation={[-Math.PI/2,0,0]} position={[0,.001,0]} receiveShadow><planeGeometry args={[w,d]}/><meshStandardMaterial map={floorTex} roughness={floorPresets[floor.material].kind==='marble'||floorPresets[floor.material].kind==='tile'?.45:.75}/></mesh>
       {WALL_NAMES.map(wall=><Wall key={wall} wall={wall} project={project} color={appearance.walls[wall]} opacity={opacityFor(wall)} holes={holes(wall)}/>)}
       {windows.map(win=>{const c=at(win.wall,win.start+win.width/2,0), ww=m(win.width), wh=m(win.height), sill=m(win.sill), T=m(wallThickness(project,win.wall))
         return <group key={win.id} position={[c.x,sill+wh/2,c.z]} rotation={[0,c.rotY,0]}>
@@ -783,7 +742,6 @@ export default function Room3D({project,furniture,mode,resetKey=0,onReset,openDo
       </group>})()}
       {furniture.map(item=><SceneFurniture key={item.id} item={item} roomWidth={W} roomDepth={D} sceneKey={sceneKey} supportHeight={furniture.find(f=>f.id===item.supportId)?.height??0} hasMonitor={furniture.some(f=>f.kind==='monitor'&&f.supportId===item.id)}/>)}
       <CameraRig view={mode} w={w} d={d} h={h} resetKey={resetKey} front={front} roomId={project.id}/>
-      {reality&&<RealityRig key={reality} request={reality} onStatus={setRStatus} onLights={setRealityLit} onDpr={setRealityDpr}/>}
       <OrbitControls makeDefault enableDamping dampingFactor={.09} rotateSpeed={mode==='inside'?.45:.75} zoomSpeed={.9} panSpeed={.85} screenSpacePanning enablePan={mode!=='inside'} enableZoom={mode!=='inside'}/>
     </Canvas>
     {mode==='inside'&&<div className="view-hint">{COARSE?'Drag to look around · Use the arrows to walk':'Drag to look around · Scroll or W A S D to walk'}</div>}
@@ -795,8 +753,6 @@ export default function Room3D({project,furniture,mode,resetKey=0,onReset,openDo
       {doors.length>0&&onToggleAll&&<button onClick={onToggleAll} title={anyOpen?'Close doors':'Open doors'}><DoorOpen size={14}/> {anyOpen?(doors.length>1?'Close doors':'Close door'):(doors.length>1?'Open doors':'Open door')}</button>}
       {onReset&&<button onClick={onReset} title="Reset view"><RotateCcw size={14}/> Reset view</button>}
     </div>
-    {reality&&rStatus?.phase==='ready'&&<RealityBar quality={rStatus.quality} camera={mode} onCamera={v=>onCamera?.(v)} onQuality={q=>onRealityQuality?.(q)} onExit={exitReality}/>}
-    {reality&&<RealityOverlay status={rStatus} onBack={exitReality}/>}
   </div>
 }
 /** The wall the Exterior View faces: the first glass wall, else the bottom wall. */

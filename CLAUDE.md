@@ -75,9 +75,6 @@ keep the two files in sync.
   `Onboarding.tsx` + `onboarding.css` (splash -> "Take the Tour" invitation on the
   1st load and every 5th after (`SPLASH_EVERY`), 4-step tour;
   tour copy lives in `TOUR_STEPS`, completion flag `roomform-onboarding`),
-  `Reality.tsx` + `realityEngine.ts` + `reality.css` (desktop-only Reality Mode:
-  lazily loaded PBR/IBL/GTAO renderer over the same scene; restores and disposes
-  everything on exit; never changes geometry, positions or colours),
   `style.css` (desktop styles first, then the `@media (max-width:820px)` mobile
   section at the end).
 

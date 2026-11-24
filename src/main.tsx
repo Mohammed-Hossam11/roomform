@@ -4,6 +4,9 @@ import App from './App'
 import { AppErrorBoundary } from './ErrorBoundary'
 import './style.css'
 
+// Reality Mode was removed; drop its leftover display preference (never room data).
+try { localStorage.removeItem('roomform-reality-quality') } catch { /* storage unavailable */ }
+
 function BootReady() {
   useEffect(() => { document.getElementById('load-fallback')?.remove() }, [])
   return null
