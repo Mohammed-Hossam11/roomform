@@ -22,9 +22,6 @@ export function readOnboarding(): { version: number; status: OnboardingStatus } 
 export function writeOnboarding(status: OnboardingStatus) {
   try { localStorage.setItem(ONBOARDING_KEY, JSON.stringify({ version: ONBOARDING_VERSION, status, at: Date.now() })) } catch { /* storage unavailable: the tour simply may show again */ }
 }
-/** The tour opens by itself only for genuinely new visitors: no saved rooms
- *  (from this or any older version) and no record of having seen the tour. */
-export const shouldAutoTour = (hasSavedRooms: boolean) => !hasSavedRooms && !readOnboarding()
 
 export const prefersReducedMotion = () => { try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch { return false } }
 const at = (delay: number, dur?: number) => ({ '--d': `${delay}s`, ...(dur ? { '--t': `${dur}s` } : {}) }) as CSSProperties
@@ -62,6 +59,40 @@ export function WelcomeSplash({ onLeave, onDone }: { onLeave: () => void; onDone
     </div>
     <button type="button" className="splash-skip" onClick={leave} aria-label="Skip introduction">Skip</button>
     <span className="splash-progress" aria-hidden><i/></span>
+  </div>
+}
+
+/* ------------------------------------------------------------------ *
+ *  Welcome invitation — shown after the splash on every load. The arrow
+ *  and note live in a fixed-size block beside (desktop) or above (phone)
+ *  the button, so the arrow always points at it.
+ * ------------------------------------------------------------------ */
+export function WelcomeInvite({ onTour, onSkip }: { onTour: () => void; onSkip: () => void }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [leaving, setLeaving] = useState(false)
+  const done = useRef(false)
+  const leave = (then: () => void) => {
+    if (done.current) return
+    done.current = true; setLeaving(true)
+    setTimeout(then, prefersReducedMotion() ? 120 : 360)
+  }
+  useModalLayer(ref, () => leave(onSkip))
+  return <div ref={ref} className={`invite ${leaving ? 'leaving' : ''}`} role="dialog" aria-modal="true" aria-labelledby="invite-title" aria-describedby="invite-note">
+    <div className="invite-center">
+      <span className="invite-kicker">Interior design studio</span>
+      <h1 id="invite-title" className="invite-title">Welcome to <span className="invite-word">roomform<i>.</i></span></h1>
+      <p className="invite-tag">Your space. Your vision. Beautifully designed.</p>
+      <div className="invite-cta">
+        <div className="invite-hint">
+          <p id="invite-note" className="invite-note">New here? Take a quick tour to discover how everything works.</p>
+          <svg className="invite-arrow invite-arrow-side" viewBox="0 0 112 60" aria-hidden><path pathLength={1} d="M6 6c4 14 14 31 36 37 20 6 40 2 60-12"/><path pathLength={1} className="head" d="M91 25.5l11.5 5.5-6 11"/></svg>
+          <svg className="invite-arrow invite-arrow-down" viewBox="0 0 74 64" aria-hidden><path pathLength={1} d="M4 10c18-8 40-6 50 8 8 11 7 25 1 40"/><path pathLength={1} className="head" d="M46 50l9 9 6-12"/></svg>
+        </div>
+        <button type="button" className="invite-tour" data-autofocus onClick={() => leave(onTour)}>Take the Tour <ArrowRight size={18}/></button>
+        <span className="invite-spacer" aria-hidden/>
+      </div>
+      <button type="button" className="invite-skip" onClick={() => leave(onSkip)}>Skip for Now</button>
+    </div>
   </div>
 }
 

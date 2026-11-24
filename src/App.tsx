@@ -7,7 +7,7 @@ import type { CameraView } from './Room3D'
 import { clone, onMediaChange } from './compat'
 import { AppErrorBoundary } from './ErrorBoundary'
 import Home from './Home'
-import { OnboardingTour, WelcomeSplash, shouldAutoTour, writeOnboarding, type OnboardingStatus } from './Onboarding'
+import { OnboardingTour, WelcomeInvite, WelcomeSplash, readOnboarding, writeOnboarding, type OnboardingStatus } from './Onboarding'
 import { activeLayout, activeRoom, catalog, CATEGORIES, frameColors, isMirrorKind, lugoColors, lugoFabrics, mirrorDepth, mirrorSpecs, woodFinishes, type LugoFabric, type MirrorMount, createRoom, defaultAppearance, floorPresets, freshCopy, gamingPresets, isOutdoorKind, loadStudio, newFurniture, normalizeProject, normalizeStudio, palette, ROOM_LIMITS, rugColors, saveStudio, uid, wallPresets, type FloorMaterial, type Furniture, type FurnitureKind, type Material, type Project, type RoomType, type Studio, type WallName, type WallType } from './model'
 import { canSupport, clampInside, doorBlocked, findSupport, followSupport, isEligibleSupport, mountNearest, mountOnWall, nextWall, wallFrame, fitOpenings, inside, isSolid, openingIssues, overlaps, placeNear, resizeRoom, warnings } from './geometry'
 import { generateIdeas } from './generator'
@@ -114,16 +114,17 @@ export default function App() {
   const [studio,setStudio]=useState<Studio>(boot.studio)
   const [isNew,setIsNew]=useState(!!boot.isNew)
   const [home,setHome]=useState(true)
-  // Splash on every page load; the tour opens by itself only for new visitors
-  // (no saved rooms from any version, no onboarding flag).
-  const [splash,setSplash]=useState(true),[tour,setTour]=useState(false),[helpMenu,setHelpMenu]=useState(false)
-  const autoTour=useRef(shouldAutoTour(!boot.isNew))
-  const splashLeave=()=>{if(autoTour.current){autoTour.current=false;setTour(true)}}
+  // Every page load: splash -> "Take the Tour" invitation -> tour or My Spaces.
+  const [splash,setSplash]=useState(true),[invite,setInvite]=useState(false),[tour,setTour]=useState(false),[helpMenu,setHelpMenu]=useState(false)
+  const invited=useRef(false)
+  const splashLeave=()=>{if(!invited.current){invited.current=true;setInvite(true)}}
   const splashDone=()=>setSplash(false)
   useEffect(()=>{const t=setTimeout(()=>{splashLeave();setSplash(false)},6000);return()=>clearTimeout(t)},[]) // never get stuck on the splash
   const finishTour=(status:OnboardingStatus)=>{writeOnboarding(status);setTour(false)}
   const replayTour=()=>{setHelpMenu(false);setPanel(null);setTour(true)}
-  const onboarding=<>{tour&&<OnboardingTour onFinish={finishTour}/>}{splash&&<WelcomeSplash onLeave={splashLeave} onDone={splashDone}/>}</>
+  const inviteTour=()=>{setInvite(false);setTour(true)}
+  const inviteSkip=()=>{setInvite(false);if(!readOnboarding())writeOnboarding('skipped')}
+  const onboarding=<>{tour&&<OnboardingTour onFinish={finishTour}/>}{invite&&<WelcomeInvite onTour={inviteTour} onSkip={inviteSkip}/>}{splash&&<WelcomeSplash onLeave={splashLeave} onDone={splashDone}/>}</>
   const project=activeRoom(studio)
   /** Replaces the active room only; every other room is left untouched. */
   const setProject=(next:Project|((prev:Project)=>Project))=>setStudio(s=>{
