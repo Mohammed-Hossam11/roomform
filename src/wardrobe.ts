@@ -16,6 +16,16 @@ export const LUX_DEFAULTS = { lengthA: 200, lengthB: 160, depth: 60, height: 240
 export const isLux = (f: Pick<Furniture, 'kind'>) => f.kind === LUX_KIND
 export const luxOf = (f: Furniture): LuxInfo => f.lux ?? { part: 'run', side: 'A' }
 export const isLuxCorner = (f: Furniture) => isLux(f) && luxOf(f).part === 'corner'
+/** What a run's end column shows. Saves without `style` keep their old look. */
+export function luxColumn(f: Furniture): { col: boolean; lower: 'drawers' | 'door' | 'open' } {
+  const l = luxOf(f)
+  if (l.style === 'doors') return { col: false, lower: 'door' }
+  if (l.style === 'led') return { col: true, lower: 'open' }
+  if (l.style === 'drawers') return { col: true, lower: 'drawers' }
+  return { col: !!l.shelves, lower: l.drawers ? 'drawers' : 'door' }
+}
+export const luxStyleOf = (f: Furniture) => { const c = luxColumn(f); return !c.col ? 'doors' : c.lower === 'drawers' ? 'drawers' : 'led' }
+export const luxMirror = (f: Furniture) => luxOf(f).mirror !== false
 /** Corner size: deeper than both runs so the mirror face has room. */
 export const cornerSize = (depthA: number, depthB: number) => Math.max(depthA, depthB) + 40
 
@@ -51,9 +61,9 @@ export function buildLux(x: number, y: number, o: { lengthA?: number; lengthB?: 
   const g = uid(), d = o.depth ?? LUX_DEFAULTS.depth, h = o.height ?? LUX_DEFAULTS.height, c = cornerSize(d, d)
   const base = { kind: LUX_KIND, material: 'light-wood' as const, color: LUX_DEFAULTS.door, accent: LUX_DEFAULTS.walnut, groupId: g, grouped: true, rotation: 0, height: h }
   const items: Furniture[] = [
-    { ...base, id: uid(), name: 'Luxury Wardrobe · Corner Mirror', width: c, depth: c, x: x + c / 2, y: y + c / 2, lux: { part: 'corner', depthA: d, depthB: d }, order: 0 },
-    { ...base, id: uid(), name: 'Luxury Wardrobe · Side A', width: o.lengthA ?? LUX_DEFAULTS.lengthA, depth: d, x: 0, y: 0, lux: { part: 'run', side: 'A', shelves: true, drawers: true }, order: 1 },
-    { ...base, id: uid(), name: 'Luxury Wardrobe · Side B', width: o.lengthB ?? LUX_DEFAULTS.lengthB, depth: d, x: 0, y: 0, lux: { part: 'run', side: 'B' }, order: 2 },
+    { ...base, id: uid(), name: 'Luxury Wardrobe · Corner Mirror', width: c, depth: c, x: x + c / 2, y: y + c / 2, lux: { part: 'corner', depthA: d, depthB: d, mirror: true }, order: 0 },
+    { ...base, id: uid(), name: 'Luxury Wardrobe · Side A', width: o.lengthA ?? LUX_DEFAULTS.lengthA, depth: d, x: 0, y: 0, lux: { part: 'run', side: 'A', style: 'drawers' }, order: 1 },
+    { ...base, id: uid(), name: 'Luxury Wardrobe · Side B', width: o.lengthB ?? LUX_DEFAULTS.lengthB, depth: d, x: 0, y: 0, lux: { part: 'run', side: 'B', style: 'doors' }, order: 2 },
   ]
   return relayoutLux(items)
 }
@@ -70,7 +80,7 @@ export function luxCornerOutline(f: Furniture) {
  *  Side B is mounted turned 270°, so its corner end is +x. */
 export function luxRunLayout(f: Furniture) {
   const l = luxOf(f), W = f.width, frame = 3
-  const colW = l.shelves ? Math.max(40, Math.min(55, Math.round(W * .24))) : 0
+  const colW = luxColumn(f).col ? Math.max(40, Math.min(55, Math.round(W * .24))) : 0
   const farIsRight = l.side !== 'B'
   const x0 = -W / 2 + frame, x1 = W / 2 - frame
   const col = colW ? (farIsRight ? { a: x1 - colW, b: x1 } : { a: x0, b: x0 + colW }) : null

@@ -15,7 +15,8 @@ import { export2D, export3D, exportRoomJson, exportStudioJson } from './export'
 import { defaultExportPrefs, ExportDialog, type ExportPrefs } from './ExportDialog'
 import type { MeasureMode } from './measure'
 import { LibraryPreview } from './PlanArt'
-import { buildLux, cornerSize, LUX_DEFAULTS, luxOf, luxSections, relayoutLux } from './wardrobe'
+import { buildLux, cornerSize, LUX_DEFAULTS, luxColumn, luxMirror, luxOf, luxSections, luxStyleOf, relayoutLux } from './wardrobe'
+import type { LuxStyle } from './model'
 import { fromCm, NewRoomModal, RoomsPanel, RoomStructure, toCm, type Unit } from './Rooms'
 import { floorDataUrl } from './textures'
 import { buildHaven, chaiseSide, officialHavenColors, clampGroup, fabricNames, groupOf, groupSize, havenColors, hvOf, mirrorGroup, resizeModule, rotateGroup, sameGroup, scaleGroup, translate, unionBounds, type Arrangement, type Fabric } from './sofa'
@@ -46,8 +47,8 @@ function AddFurnitureModal({kind,roomName,maxSide,ceiling,preview,onAdd,onClose}
   type Key=keyof typeof vals
   const round=kind==='mirror-round'||kind==='halo-table'||(kind==='rug'&&rugShape==='circle')
   const fields:{key:Key;label:string;hint?:string;lo:number;hi:number}[]=lux?[
-    {key:'width',label:'Side A length',hint:'Section with shelves and drawers',lo:60,hi:maxSide},
-    {key:'depth',label:'Side B length',hint:'Section with tall doors',lo:60,hi:maxSide},
+    {key:'width',label:'Side A length',hint:'Shelves + drawers (changeable)',lo:60,hi:maxSide},
+    {key:'depth',label:'Side B length',hint:'Full doors (changeable)',lo:60,hi:maxSide},
     {key:'arm',label:'Depth',hint:'Both sections',lo:35,hi:90},
     {key:'height',label:'Height',hint:'Change each side later',lo:120,hi:ceiling},
   ]:lShape?[
@@ -89,7 +90,16 @@ function AddFurnitureModal({kind,roomName,maxSide,ceiling,preview,onAdd,onClose}
     </form>
   </Modal>
 }
-const luxRunDoors=(f:Furniture)=>luxOf(f).doors??Math.max(1,Math.round((f.width-6-(luxOf(f).shelves?Math.max(40,Math.min(55,Math.round(f.width*.24))):0))/48))
+const luxRunDoors=(f:Furniture)=>luxOf(f).doors??Math.max(1,Math.round((f.width-6-(luxColumn(f).col?Math.max(40,Math.min(55,Math.round(f.width*.24))):0))/48))
+/** Visual picker for a wardrobe run's front: full doors / LED shelves / shelves + drawers. */
+const LUX_STYLES:{value:LuxStyle;label:string;art:ReactNode}[]=[
+  {value:'doors',label:'Full Doors',art:<><rect x="3" y="3" width="26" height="26" rx="1" fill="#5e4433"/><rect x="5" y="5" width="10.5" height="22" fill="#e4dbcd"/><rect x="16.5" y="5" width="10.5" height="22" fill="#e4dbcd"/><path d="M14 11v10M18 11v10" stroke="#1c1916" strokeWidth="1.2" strokeLinecap="round"/></>},
+  {value:'led',label:'LED Shelves',art:<><rect x="3" y="3" width="26" height="26" rx="1" fill="#5e4433"/><rect x="5" y="5" width="22" height="6" fill="#e4dbcd"/><rect x="5" y="12" width="22" height="15" fill="#8a6a52"/>{[16.5,21.5].map(y=><g key={y}><rect x="5" y={y} width="22" height="1.2" fill="#5e4433"/><rect x="6.5" y={y-1.4} width="19" height=".9" fill="#ffcf80"/></g>)}</>},
+  {value:'drawers',label:'Shelves + Drawers',art:<><rect x="3" y="3" width="26" height="26" rx="1" fill="#5e4433"/><rect x="5" y="5" width="22" height="5" fill="#e4dbcd"/><rect x="5" y="11" width="22" height="7" fill="#8a6a52"/><rect x="6.5" y="12" width="19" height=".9" fill="#ffcf80"/>{[19,22.3,25.6].map(y=><g key={y}><rect x="5" y={y} width="22" height="2.6" fill="#e4dbcd"/><rect x="11" y={y+.6} width="10" height=".6" fill="#1c1916"/></g>)}</>},
+]
+function LuxStylePicker({value,onChange}:{value:LuxStyle;onChange:(v:LuxStyle)=>void}) {
+  return <div className="lux-styles" role="radiogroup" aria-label="Door style">{LUX_STYLES.map(s=><button key={s.value} type="button" role="radio" aria-checked={value===s.value} className={value===s.value?'active':''} onClick={()=>onChange(s.value)}><svg viewBox="0 0 32 32" aria-hidden>{s.art}</svg><span>{s.label}</span></button>)}</div>
+}
 /** Exact sizes of both wardrobe sides (and the corner height) while grouped. */
 function LuxSizeModal({sections,maxSide,ceiling,onApply,onClose}:{sections:ReturnType<typeof luxSections>;maxSide:number;ceiling:number;onApply:(p:Record<string,Partial<Furniture>>)=>string|null;onClose:()=>void}) {
   const {a,b,corner}=sections, r=(v?:number)=>String(Math.round((v??0)*10)/10)
@@ -97,8 +107,8 @@ function LuxSizeModal({sections,maxSide,ceiling,onApply,onClose}:{sections:Retur
   const [error,setError]=useState('')
   type K=keyof typeof vals
   const rows:[string,Furniture|undefined,[K,string,number,number][]][]=[
-    ['Side A · shelves & drawers',a,[['aw','Length',60,maxSide],['ad','Depth',35,90],['ah','Height',120,ceiling]]],
-    ['Side B · tall doors',b,[['bw','Length',60,maxSide],['bd','Depth',35,90],['bh','Height',120,ceiling]]],
+    ['Side A',a,[['aw','Length',60,maxSide],['ad','Depth',35,90],['ah','Height',120,ceiling]]],
+    ['Side B',b,[['bw','Length',60,maxSide],['bd','Depth',35,90],['bh','Height',120,ceiling]]],
     ['Corner mirror',corner,[['ch','Height',120,ceiling]]],
   ]
   const submit=()=>{
@@ -491,6 +501,8 @@ export default function App() {
     if(on)setNotice('Sections reconnected at the corner and grouped.')
   }
   const luxNum=(v:number,lo:number,hi:number)=>Number.isFinite(v)&&v>=lo&&v<=hi
+  /** Door style change: door count is recalculated for the new front (doors? undefined). */
+  const setLuxStyle=(f:Furniture,style:LuxStyle)=>{if(luxStyleOf(f)===style&&luxOf(f).style)return;updateLux({[f.id]:{lux:{...luxOf(f),style,doors:undefined}}})}
   const setGrouped=(on:boolean)=>{if(!selected?.groupId)return;const gid=selected.groupId;update(d=>{for(const f of activeLayout(d).furniture)if(f.groupId===gid)f.grouped=on})}
   const sofaLook=(patch:Partial<Pick<Furniture,'color'|'fabric'>>)=>{if(!selected)return;const ids=new Set((sofaSet.length?sofaSet:[selected]).map(f=>f.id));update(d=>{for(const f of activeLayout(d).furniture)if(ids.has(f.id))Object.assign(f,patch)})}
   const setChaise=(side:'left'|'right')=>{if(chaiseSide(sofaSet)===side)return;const t=clampGroup(mirrorGroup(sofaSet),project);if(!t){setNotice('The mirrored sofa does not fit here.');return}updateMany(t)}
@@ -675,25 +687,26 @@ export default function App() {
           {selected.mount!=='wall'&&<div className="field-group"><h3>Position <small>center of item</small></h3><div className="field-grid"><NumberField label="X" value={selected.x} min={0} max={RW} onChange={v=>updateField('x',v)}/><NumberField label="Y" value={selected.y} min={0} max={RD} onChange={v=>updateField('y',v)}/></div></div>}
           {selected.mount!=='wall'&&<div className="field-group"><h3>Rotation</h3><div className="rotation-row"><NumberField label="Angle" value={selected.rotation} min={-360} max={360} suffix="°" onChange={v=>updateField('rotation',v)}/><button title="Rotate 90° clockwise" onClick={rotate90}><RotateCw size={17}/></button></div></div>}
           {selected.kind==='wardrobe-lux'&&(()=>{const secs=luxSections(luxSet), l=luxOf(selected)
+            const cornerPicker=(c:Furniture)=><Segmented value={luxMirror(c)?'mirror':'door'} options={[{value:'mirror',label:'Full mirror'},{value:'door',label:'Door'}]} onChange={v=>updateLux({[c.id]:{lux:{...luxOf(c),mirror:v==='mirror'}}})}/>
             const side=(f:Furniture|undefined,label:string)=>f&&<div className="lux-side"><span className="mini-label">{label}</span><div className="field-grid">
               <NumberField label="Length" value={f.width} min={60} max={maxSide} onChange={v=>{if(luxNum(v,60,maxSide)){const e=updateLux({[f.id]:{width:v}});if(e)setNotice(e)}}}/>
               <NumberField label="Depth" value={f.depth} min={35} max={90} onChange={v=>{if(luxNum(v,35,90)){const e=updateLux({[f.id]:{depth:v}});if(e)setNotice(e)}}}/>
               <NumberField label="Height" value={f.height} min={120} max={RC} onChange={v=>{if(luxNum(v,120,RC)){const e=updateLux({[f.id]:{height:v}});if(e)setNotice(e)}}}/>
-            </div></div>
+            </div><LuxStylePicker value={luxStyleOf(f)} onChange={st=>setLuxStyle(f,st)}/></div>
             return <div className="field-group sofa-panel"><h3>Luxury wardrobe <small>{grouped?'sections grouped':'section selected'}</small></h3>
               {luxSet.length>1&&<><span className="mini-label">Sections</span><Segmented value={grouped?'group':'free'} options={[{value:'group',label:'Group'},{value:'free',label:'Ungroup'}]} onChange={v=>setLuxGrouped(v==='group')}/></>}
               {grouped&&<>
-                {side(secs.a,'Side A · shelves & drawers')}
-                {side(secs.b,'Side B · tall doors')}
-                {secs.corner&&<div className="lux-side"><span className="mini-label">Corner mirror</span><div className="field-grid"><NumberField label="Height" value={secs.corner.height} min={120} max={RC} onChange={v=>{if(luxNum(v,120,RC)){const e=updateLux({[secs.corner!.id]:{height:v}});if(e)setNotice(e)}}}/></div></div>}
+                {side(secs.a,'Side A')}
+                {side(secs.b,'Side B')}
+                {secs.corner&&<div className="lux-side"><span className="mini-label">Corner</span><div className="field-grid"><NumberField label="Height" value={secs.corner.height} min={120} max={RC} onChange={v=>{if(luxNum(v,120,RC)){const e=updateLux({[secs.corner!.id]:{height:v}});if(e)setNotice(e)}}}/></div>{cornerPicker(secs.corner)}</div>}
                 <button className="link-button lux-exact" onClick={()=>setSizeOpen(true)}><Ruler size={13}/> Exact sizes of both sides</button>
               </>}
               {l.part==='run'&&<>
                 <span className="mini-label">Doors on this section</span>
                 <div className="field-grid"><NumberField label="Doors" suffix="" value={luxRunDoors(selected)} min={1} max={8} onChange={v=>{if(Number.isInteger(v)&&v>=1&&v<=8)updateLux({[selected.id]:{lux:{...l,doors:v}}})}}/></div>
-                <span className="mini-label">End column</span>
-                <div className="segmented"><button className={l.shelves?'active':''} onClick={()=>updateLux({[selected.id]:{lux:{...l,shelves:!l.shelves}}})}>LED shelves</button><button className={l.drawers?'active':''} disabled={!l.shelves} onClick={()=>updateLux({[selected.id]:{lux:{...l,drawers:!l.drawers}}})}>Drawers</button></div>
+                {!grouped&&<><span className="mini-label">Door style</span><LuxStylePicker value={luxStyleOf(selected)} onChange={st=>setLuxStyle(selected,st)}/></>}
               </>}
+              {l.part==='corner'&&!grouped&&<><span className="mini-label">Corner face</span>{cornerPicker(selected)}</>}
               <small className="field-note">{grouped?'Grouped: move and rotate the whole L together; each side keeps its own size and height.':'Ungrouped: move, rotate and resize this section on its own. Drag sections together to snap them, then choose Group to reconnect the L.'}</small>
             </div>})()}
           {selected.kind==='haven'&&<div className="field-group sofa-panel"><h3>Cloud Haven sofa <small>{grouped?`${members.length} sections grouped`:'section selected'}</small></h3>

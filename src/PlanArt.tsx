@@ -3,7 +3,7 @@ import { floorPresets, isMirrorKind, type Appearance, type Furniture, type Outdo
 import { doorGeometry, exterior, isLShape, lArm, lOutline, wallFrame, wallInset, wallPoint, wallThickness } from './geometry'
 import { deskAccessories, lWardrobeLayout, mirrorOutline, type MirrorKind } from './parts'
 import { hvOf } from './sofa'
-import { isLux, luxCornerOutline, luxOf, luxRunLayout } from './wardrobe'
+import { isLux, luxCornerOutline, luxMirror, luxOf, luxRunLayout } from './wardrobe'
 import { floorDataUrl, GROUND_CM, groundDataUrl, TILE_CM } from './textures'
 
 export function tint(hex: string, factor: number) {
@@ -194,9 +194,10 @@ function LuxPlan({ item, invalid }: { item: Furniture; invalid: boolean }) {
     const len = Math.hypot(o.mirror.a.x - o.mirror.b.x, o.mirror.a.y - o.mirror.b.y)
     return <g transform={tr}>
       <polygon points={o.pts.map(p => `${p.x},${p.y}`).join(' ')} fill={tint(walnut, 1.75)} stroke={stroke} strokeWidth={sw} strokeLinejoin="round" />
-      <line x1={o.mirror.a.x - 2} y1={o.mirror.a.y + 1} x2={o.mirror.b.x + 1} y2={o.mirror.b.y - 2} stroke="#9cc7d4" strokeWidth="4.5" strokeLinecap="round" />
-      <line x1={o.mirror.a.x - 4} y1={o.mirror.a.y + 1} x2={o.mirror.b.x + 1} y2={o.mirror.b.y - 4} stroke="#ffffff" strokeWidth="1" opacity=".8" />
-      {len > 30 && <text transform={`translate(${mx - 9} ${my - 9}) rotate(-45)`} textAnchor="middle" dominantBaseline="middle" fontSize={Math.min(7, len / 7)} fontWeight={700} letterSpacing=".6" fill="#4f7d8d">MIRROR</text>}
+      {!luxMirror(item) && <line x1={o.mirror.a.x - 2} y1={o.mirror.a.y + 1} x2={o.mirror.b.x + 1} y2={o.mirror.b.y - 2} stroke={tint(item.color, .9)} strokeWidth="4.5" strokeLinecap="round" />}
+      {luxMirror(item) && <line x1={o.mirror.a.x - 2} y1={o.mirror.a.y + 1} x2={o.mirror.b.x + 1} y2={o.mirror.b.y - 2} stroke="#9cc7d4" strokeWidth="4.5" strokeLinecap="round" />}
+      {luxMirror(item) && <line x1={o.mirror.a.x - 4} y1={o.mirror.a.y + 1} x2={o.mirror.b.x + 1} y2={o.mirror.b.y - 4} stroke="#ffffff" strokeWidth="1" opacity=".8" />}
+      {luxMirror(item) && len > 30 && <text transform={`translate(${mx - 9} ${my - 9}) rotate(-45)`} textAnchor="middle" dominantBaseline="middle" fontSize={Math.min(7, len / 7)} fontWeight={700} letterSpacing=".6" fill="#4f7d8d">MIRROR</text>}
     </g>
   }
   const w = item.width, d = item.depth, lay = luxRunLayout(item), band = Math.min(4, d * .08), fy = d / 2

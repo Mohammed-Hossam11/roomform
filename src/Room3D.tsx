@@ -8,7 +8,7 @@ import { doorGeometry, exterior, lArm, wallFrame, wallInset, wallThickness } fro
 import { deskAccessories, lWardrobeLayout, mirrorOutline, type MirrorKind } from './parts'
 import { caneCanvas, fabricCanvas, floorCanvas, grainCanvas, GROUND_CM, groundCanvas, TILE_CM, upholsteryCanvas } from './textures'
 import { HAVEN, hvOf } from './sofa'
-import { luxCornerOutline, luxOf, luxRunLayout } from './wardrobe'
+import { luxColumn, luxCornerOutline, luxMirror, luxOf, luxRunLayout } from './wardrobe'
 
 const m=(cm:number)=>cm/100
 /** Phones/tablets: lighter shadow maps and mirror reflections, same geometry. */
@@ -313,18 +313,21 @@ function LuxSection3D({item,sceneKey}:{item:Furniture;sceneKey:string}) {
     const cx=(ax+bx)/2+nnx*.003, cz=(az+bz)/2+nnz*.003, cy=.07+.03+mh/2
     return <group>
       <mesh geometry={shape.geo} rotation={[-Math.PI/2,0,0]} castShadow receiveShadow><meshStandardMaterial color={walnut} roughness={.55}/></mesh>
-      <CubeCamera key={sceneKey} resolution={COARSE?128:256} frames={1} near={.05} far={60} position={[cx,cy,cz]} rotation={[0,theta,0]}>
+      {luxMirror(item)?<CubeCamera key={sceneKey} resolution={COARSE?128:256} frames={1} near={.05} far={60} position={[cx,cy,cz]} rotation={[0,theta,0]}>
         {(env)=><mesh><planeGeometry args={[mw,mh]}/><meshStandardMaterial envMap={env} color="#eef6f8" metalness={1} roughness={.015} envMapIntensity={1.2}/></mesh>}
-      </CubeCamera>
+      </CubeCamera>:<group position={[cx,cy,cz]} rotation={[0,theta,0]}>
+        <Box size={[mw,mh,.02]} position={[0,0,-.008]} color={item.color} roughness={.6}/>
+        <Box size={[.012,Math.min(1.05,mh*.48),.016]} position={[-mw/2+.05,Math.min(0,-mh/2+.35+Math.min(1.05,mh*.48)/2),.01]} color={black} roughness={.3}/>
+      </group>}
     </group>
   }
   const lay=luxRunLayout(item), dT=.02, gap=.002, plinth=.07, crown=.04, stile=m(lay.frame), zf=D/2
   const doorY0=plinth+gap, doorY1=H-crown-gap
   const handleL=Math.min(1.05,(doorY1-doorY0)*.48), handleY=Math.min(doorY0+.35+handleL/2,(doorY0+doorY1)/2)
   const handles=lay.doors.flatMap((dr,i)=>i%2===0&&lay.doors[i+1]?[dr.b-3.5,dr.b+3.5]:i%2===0?[dr.a+4.5]:[])
-  const col=lay.col, l=luxOf(item)
+  const col=lay.col, colStyle=luxColumn(item)
   const topH=Math.max(.4,Math.min(.6,H*.22)), lowH=Math.max(.55,Math.min(.8,H*.3))
-  const nicheY0=plinth+lowH, nicheY1=Math.max(nicheY0+.2,H-crown-topH)
+  const nicheY0=colStyle.lower==='open'?plinth:plinth+lowH, nicheY1=Math.max(nicheY0+.2,H-crown-topH)
   const cx0=col?m(col.a):0, cx1=col?m(col.b):0
   // carcass, leaving the open niche of the shelf column hollow
   const carcass=col?[
@@ -362,7 +365,7 @@ function LuxSection3D({item,sceneKey}:{item:Furniture;sceneKey:string}) {
         {/* top cabinet */}
         <Box size={[cw-gap*2,topH-gap*2,dT]} position={[cx,H-crown-topH/2,zf-dT/2+.001]} color={door} roughness={.6}/>
         {/* drawers (or a low door) */}
-        {(l.drawers?[0,1,2]:[0]).map((k,_i,arr)=>{const h=lowH/arr.length;return <group key={`dr${k}`}>
+        {(colStyle.lower==='open'?[]:colStyle.lower==='drawers'?[0,1,2]:[0]).map((k,_i,arr)=>{const h=lowH/arr.length;return <group key={`dr${k}`}>
           <Box size={[cw-gap*2,h-gap*3,dT]} position={[cx,plinth+h*(k+.5),zf-dT/2+.001]} color={door} roughness={.6}/>
           <Box size={[cw*.62,.008,.012]} position={[cx,plinth+h*(k+1)-.02,zf+.006]} color={black} roughness={.35}/>
         </group>})}

@@ -48,7 +48,13 @@ export type Furniture = {
 export type MirrorMount = 'wall' | 'free' | 'lean'
 /** One section of the modular luxury wardrobe: the mirrored corner unit or a
  *  door run (Side A / Side B) with its own door count and shelf column. */
-export type LuxInfo = { part: 'corner' | 'run'; side?: 'A' | 'B'; doors?: number; shelves?: boolean; drawers?: boolean; depthA?: number; depthB?: number }
+export type LuxStyle = 'doors' | 'led' | 'drawers'
+export type LuxInfo = { part: 'corner' | 'run'; side?: 'A' | 'B'; doors?: number; shelves?: boolean; drawers?: boolean; depthA?: number; depthB?: number
+  /** Run front: full doors, open LED shelves, or shelves + drawers. Absent in
+   *  older saves, which keep their look through `shelves` / `drawers`. */
+  style?: LuxStyle
+  /** Corner face: mirror (default) or a cream door. */
+  mirror?: boolean }
 export type LugoFabric = 'boucle' | 'textured' | 'tweed'
 export const MIRROR_KINDS: MirrorKind[] = ['mirror-rect', 'mirror-arch', 'mirror-round', 'mirror-oval', 'mirror-wavy', 'mirror-organic', 'mirror-vanity', 'mirror-floor']
 export const isMirrorKind = (k: FurnitureKind): k is MirrorKind => (MIRROR_KINDS as string[]).includes(k)
@@ -298,7 +304,7 @@ export function normalizeProject(input:unknown,strict=false):Project {
       if(item.kind==='wardrobe-lux'){
         const l=raw.lux&&typeof raw.lux==='object'?raw.lux:{}, part=l.part==='corner'?'corner':'run'
         const pos=(v:unknown,d:number)=>typeof v==='number'&&Number.isFinite(v)&&v>0?v:d
-        item={...item,lux:part==='corner'?{part,depthA:pos(l.depthA,60),depthB:pos(l.depthB,60)}:{part,side:l.side==='B'?'B':'A',doors:Number.isInteger(l.doors)&&l.doors>=1&&l.doors<=8?l.doors:undefined,shelves:!!l.shelves,drawers:!!l.drawers}}
+        item={...item,lux:part==='corner'?{part,depthA:pos(l.depthA,60),depthB:pos(l.depthB,60),mirror:l.mirror!==false}:{part,side:l.side==='B'?'B':'A',doors:Number.isInteger(l.doors)&&l.doors>=1&&l.doors<=8?l.doors:undefined,shelves:!!l.shelves,drawers:!!l.drawers,style:l.style==='doors'||l.style==='led'||l.style==='drawers'?l.style:undefined}}
       } else item={...item,lux:undefined}
       if(item.kind==='tv-unit'||item.kind==='rattan-table') item={...item,accent:validColor(raw.accent,'#d8bd8c')}
       if(item.kind==='tv-stand') {
