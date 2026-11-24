@@ -54,6 +54,13 @@ export function useModalLayer(ref: React.RefObject<HTMLElement | null>, onClose:
   }, [ref])
 }
 export const anyDialogOpen = () => layers.length > 0
+/** Publishes the visible viewport (minus on-screen keyboard and toolbars) as
+ *  --vvh / --vvt so dialogs can size and position themselves above it. */
+if (typeof window !== 'undefined' && window.visualViewport) {
+  const vv = window.visualViewport
+  const sync = () => { const r = document.documentElement.style; r.setProperty('--vvh', `${Math.round(vv.height)}px`); r.setProperty('--vvt', `${Math.round(vv.offsetTop)}px`) }
+  vv.addEventListener('resize', sync); vv.addEventListener('scroll', sync); sync()
+}
 export function Modal({title,subtitle,children,onClose,className='',tone,sheet=false,leading}:{title:string;subtitle?:string;children:ReactNode;onClose:()=>void;className?:string;tone?:'danger';sheet?:boolean;leading?:ReactNode}) {
   const ref = useRef<HTMLDivElement>(null)
   useModalLayer(ref, onClose)
