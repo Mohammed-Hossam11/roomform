@@ -8,6 +8,7 @@ import { clampGroup, groupOf, isHaven, magnetSnap, resizeModule, translate, unio
 
 type Props = {
   project: Project; furniture: Furniture[]; selectedId: string | null; showGrid: boolean; measureMode: MeasureMode; snap: boolean
+  mobile: boolean; editMode: 'move' | 'resize'
   onSelect: (id: string | null) => void; onMove: (item: Furniture) => void; onMoveMany: (items: Furniture[]) => void; onCommit: () => void; onAdd: (kind: FurnitureKind, x: number, y: number) => void
   onRotate: () => void; onDuplicate: () => void; onDelete: () => void; onEditSize: () => void; openDoors?: Record<string, boolean>
 }
@@ -19,14 +20,14 @@ function rotate(x: number, y: number, angle: number) { const a = angle * Math.PI
 
 export default function FloorPlan(p: Props) {
   const wrap = useRef<HTMLDivElement>(null), svg = useRef<SVGSVGElement>(null), roomGroup = useRef<SVGGElement>(null)
-  const drag = useRef<DragState | null>(null), pan = useRef<{ x: number; y: number; px: number; py: number; k: number } | null>(null)
+  const drag = useRef<DragState | null>(null), pan = useRef<{ x: number; y: number; px: number; py: number } | null>(null)
   const [zoom, setZoom] = useState(1), [offset, setOffset] = useState({ x: 0, y: 0 })
   const [space, setSpace] = useState(false)
   // Touch: bigger handles/toolbar on coarse pointers, and two-finger pinch-zoom / pan.
   const coarse = useMemo(() => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches, [])
   const tbW = coarse ? 188 : TB_W, tbH = coarse ? 50 : TB_H
   const touches = useRef(new Map<number, { x: number; y: number }>())
-  const pinch = useRef<{ dist: number; mid: { x: number; y: number }; zoom: number; offset: { x: number; y: number }; k: number } | null>(null)
+  const pinch = useRef<{ dist: number; zoom: number; anchor: { x: number; y: number } } | null>(null)
   const [dragging, setDragging] = useState<null | 'move' | 'resize'>(null)
   const [tip, setTip] = useState<{ x: number; y: number } | null>(null)
   const [overlay, setOverlay] = useState<{ scale: number; tb: { x: number; y: number } | null }>({ scale: 1, tb: null })
@@ -60,7 +61,7 @@ export default function FloorPlan(p: Props) {
     const toScreen = (x: number, y: number) => ({ x: m.a * x + m.c * y + m.e - wr.left, y: m.b * x + m.d * y + m.f - wr.top })
     const rectOf = (f: Furniture) => { const b = bounds(f); const a = toScreen(b.minX, b.minY), c = toScreen(b.maxX, b.maxY); return { l: a.x, t: a.y, r: c.x, b: c.y } }
     let tb: { x: number; y: number } | null = null
-    if (selected && !dragging) {
+    if (!p.mobile && selected && !dragging) {
       const u = unionBounds(members.length ? members : [selected]), ua = toScreen(u.minX, u.minY), ub = toScreen(u.maxX, u.maxY)
       const s = { l: ua.x, t: ua.y, r: ub.x, b: ub.y }, mx = (s.l + s.r) / 2, my = (s.t + s.b) / 2, gap = 12
       const others = p.furniture.filter(f => !members.some(m => m.id === f.id) && f.kind !== 'rug').map(rectOf)
@@ -88,14 +89,22 @@ export default function FloorPlan(p: Props) {
     const pt = new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse())
     return { x: pt.x, y: pt.y }
   }
+  const screenPoint = (clientX: number, clientY: number) => {
+    const matrix = svg.current?.getScreenCTM()
+    if (!matrix) return { x: cx, y: cy }
+    const pt = new DOMPoint(clientX, clientY).matrixTransform(matrix.inverse())
+    return { x: pt.x, y: pt.y }
+  }
   const startPan = (e: PointerEvent<Element>) => {
     p.onSelect(null)
-    pan.current = { ...offset, px: e.clientX, py: e.clientY, k: svg.current?.getScreenCTM()?.a || 1 }
+    const cursor = screenPoint(e.clientX, e.clientY)
+    pan.current = { ...offset, px: cursor.x, py: cursor.y }
     svg.current?.setPointerCapture(e.pointerId)
   }
   const selectDown = (e: PointerEvent<SVGGElement>, item: Furniture) => {
     if (space || e.button !== 0) return
     e.stopPropagation(); p.onSelect(item.id)
+    if (p.mobile && p.editMode === 'resize') return
     const pos = point(e.clientX, e.clientY)
     drag.current = { type: 'move', id: item.id, dx: pos.x - item.x, dy: pos.y - item.y, committed: false }
     svg.current?.setPointerCapture(e.pointerId)
@@ -117,17 +126,23 @@ export default function FloorPlan(p: Props) {
   }
   /** Every pointer is tracked; a second finger cancels any drag and starts pinch/pan. */
   const onPointerDownCapture = (e: PointerEvent<SVGSVGElement>) => {
+    if (e.pointerType !== 'touch') return
     touches.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
     if (e.pointerType === 'touch' && touches.current.size === 2) {
       e.stopPropagation(); e.preventDefault()
       drag.current = null; pan.current = null; setDragging(null); setTip(null); setGuides([])
       const st = pinchState()
-      pinch.current = { ...st, zoom, offset, k: svg.current?.getScreenCTM()?.a || 1 }
+      pinch.current = { dist: st.dist, zoom, anchor: point(st.mid.x, st.mid.y) }
       svg.current?.setPointerCapture(e.pointerId)
     }
   }
   const onPointerEnd = (e: PointerEvent<SVGSVGElement>) => {
     touches.current.delete(e.pointerId)
+    if (pinch.current && touches.current.size === 1) {
+      const remaining = [...touches.current.values()][0]
+      const cursor = screenPoint(remaining.x, remaining.y)
+      pan.current = { ...offset, px: cursor.x, py: cursor.y }
+    }
     if (touches.current.size < 2) pinch.current = null
     if (touches.current.size === 0) endDrag()
   }
@@ -136,8 +151,10 @@ export default function FloorPlan(p: Props) {
     const pz = pinch.current
     if (pz && touches.current.size >= 2) {
       const st = pinchState()
-      setZoom(Math.max(.5, Math.min(4, pz.zoom * st.dist / pz.dist)))
-      setOffset({ x: pz.offset.x + (st.mid.x - pz.mid.x) / pz.k, y: pz.offset.y + (st.mid.y - pz.mid.y) / pz.k })
+      const nextZoom = Math.max(.5, Math.min(4, pz.zoom * st.dist / pz.dist))
+      const cursor = screenPoint(st.mid.x, st.mid.y)
+      setZoom(nextZoom)
+      setOffset({ x: cursor.x - cx - nextZoom * (pz.anchor.x - cx), y: cursor.y - cy - nextZoom * (pz.anchor.y - cy) })
       return
     }
     const d = drag.current
@@ -196,10 +213,16 @@ export default function FloorPlan(p: Props) {
       }
     } else if (pan.current) {
       const s = pan.current
-      setOffset({ x: s.x + (e.clientX - s.px) / s.k, y: s.y + (e.clientY - s.py) / s.k })
+      const cursor = screenPoint(e.clientX, e.clientY)
+      setOffset({ x: s.x + cursor.x - s.px, y: s.y + cursor.y - s.py })
     }
   }
-  const onWheel = (e: WheelEvent<SVGSVGElement>) => { setZoom(z => Math.max(.5, Math.min(4, z * (e.deltaY > 0 ? .9 : 1.1)))) }
+  const onWheel = (e: WheelEvent<SVGSVGElement>) => {
+    const anchor = point(e.clientX, e.clientY), cursor = screenPoint(e.clientX, e.clientY)
+    const nextZoom = Math.max(.5, Math.min(4, zoom * (e.deltaY > 0 ? .9 : 1.1)))
+    setZoom(nextZoom)
+    setOffset({ x: cursor.x - cx - nextZoom * (anchor.x - cx), y: cursor.y - cy - nextZoom * (anchor.y - cy) })
+  }
   const onDrop = (e: DragEvent<SVGSVGElement>) => {
     e.preventDefault(); const kind = e.dataTransfer.getData('application/roomform') as FurnitureKind
     if (kind) { const pos = point(e.clientX, e.clientY); p.onAdd(kind, pos.x, pos.y) }
@@ -208,10 +231,10 @@ export default function FloorPlan(p: Props) {
   // (including each pointer move while dragging, resizing or rotating).
   const layout = activeLayout(p.project)
   const dims = useMemo(() => buildDims(p.project, { ...layout, furniture: p.furniture }, {
-    mode: p.measureMode, selectedId: p.selectedId, k, compact: coarse,
+    mode: p.measureMode, selectedId: p.mobile && p.editMode === 'resize' ? null : p.selectedId, k, compact: coarse,
     include: p.measureMode === 'all' ? { ...ALL_INCLUDE, outdoor: !coarse } : { room: true, furniture: true, walls: true, pairs: true, openings: true, outdoor: false },
     detail: p.measureMode === 'all' || coarse ? 'basic' : 'detailed',
-  }), [p.project, layout, p.furniture, p.measureMode, p.selectedId, k, coarse])
+  }), [p.project, layout, p.furniture, p.measureMode, p.selectedId, p.mobile, p.editMode, k, coarse])
   const ordered = [...p.furniture.filter(f => f.kind === 'rug'), ...p.furniture.filter(f => f.kind !== 'rug' && !f.supportId), ...p.furniture.filter(f => f.kind !== 'rug' && f.supportId)]
   const support = selected?.supportId ? p.furniture.find(f => f.id === selected.supportId) : undefined
   const hr = (coarse ? 7 : 4.5) * k, pad = 3 * k, hit = coarse ? 3.4 : 2.2
@@ -228,8 +251,8 @@ export default function FloorPlan(p: Props) {
         {ordered.map(item => <g key={item.id} onPointerDown={e => selectDown(e, item)} style={{ cursor: dragging === 'move' && item.id === p.selectedId ? 'grabbing' : 'grab' }}>
           <FurnitureArt item={item} invalid={warnings(item, p.furniture, p.project).length > 0} />
           {isCircular(item)
-            ? <ellipse cx={item.x} cy={item.y} rx={item.width / 2} ry={item.depth / 2} fill="transparent" />
-            : <rect x={-item.width / 2} y={-item.depth / 2 - (item.mount === 'wall' ? 6 : 0)} width={item.width} height={item.mount === 'wall' ? Math.max(item.depth, 14) + 6 : item.depth} transform={`translate(${item.x} ${item.y}) rotate(${item.rotation})`} fill="transparent" />}
+            ? <ellipse cx={item.x} cy={item.y} rx={Math.max(item.width / 2, p.mobile ? 22 * k : 0)} ry={Math.max(item.depth / 2, p.mobile ? 22 * k : 0)} fill="transparent" />
+            : <rect x={-Math.max(item.width, p.mobile ? 44 * k : 0) / 2} y={-Math.max(item.mount === 'wall' ? Math.max(item.depth, 14) + 6 : item.depth, p.mobile ? 44 * k : 0) / 2} width={Math.max(item.width, p.mobile ? 44 * k : 0)} height={Math.max(item.mount === 'wall' ? Math.max(item.depth, 14) + 6 : item.depth, p.mobile ? 44 * k : 0)} transform={`translate(${item.x} ${item.y}) rotate(${item.rotation})`} fill="transparent" />}
         </g>)}
         {ordered.map(item => <FurnitureLabel key={item.id} item={item} k={k} />)}
         {guides.map((g, i) => <line key={i} x1={g.x1} y1={g.y1} x2={g.x2} y2={g.y2} stroke="#2f9a74" strokeWidth={2.2} vectorEffect="non-scaling-stroke" strokeLinecap="round" pointerEvents="none" />)}
@@ -238,7 +261,7 @@ export default function FloorPlan(p: Props) {
           {isCircular(selected)
             ? <ellipse rx={selected.width / 2 + pad} ry={selected.depth / 2 + pad} fill="none" stroke="#2f6b5a" strokeWidth={1.25} vectorEffect="non-scaling-stroke" pointerEvents="none" />
             : <rect x={-selected.width / 2 - pad} y={-selected.depth / 2 - pad} width={selected.width + pad * 2} height={selected.depth + pad * 2} rx={2 * k} fill="none" stroke="#2f6b5a" strokeWidth={1.25} vectorEffect="non-scaling-stroke" pointerEvents="none" />}
-          {selected.mount !== 'wall' && ([-1, 1] as const).flatMap(sx => ([-1, 1] as const).map(sy => <g key={`${sx}:${sy}`}>
+          {selected.mount !== 'wall' && (!p.mobile || p.editMode === 'resize') && ([-1, 1] as const).flatMap(sx => ([-1, 1] as const).map(sy => <g key={`${sx}:${sy}`}>
             <circle cx={sx * (selected.width / 2 + pad)} cy={sy * (selected.depth / 2 + pad)} r={hr} fill="#fff" stroke="#2f6b5a" strokeWidth={1.4} vectorEffect="non-scaling-stroke" pointerEvents="none" />
             <circle data-resize-handle={`${sx}:${sy}`} cx={sx * (selected.width / 2 + pad)} cy={sy * (selected.depth / 2 + pad)} r={hr * hit} fill="transparent" style={{ cursor: `${sx === sy ? 'nwse' : 'nesw'}-resize` }} onPointerDown={e => handleDown(e, selected, sx, sy)} />
           </g>))}
@@ -246,7 +269,7 @@ export default function FloorPlan(p: Props) {
         <DimensionLayer dims={dims} k={k} compact={coarse} furniture={p.furniture} />
       </g>
     </svg>
-    {selected && overlay.tb && !dragging && <div className="floating-toolbar" style={{ left: overlay.tb.x, top: overlay.tb.y }} onPointerDown={e => e.stopPropagation()}>
+    {!p.mobile && selected && overlay.tb && !dragging && <div className="floating-toolbar" style={{ left: overlay.tb.x, top: overlay.tb.y }} onPointerDown={e => e.stopPropagation()}>
       <button title="Edit size" aria-label="Edit size" onClick={p.onEditSize}><Ruler size={16} strokeWidth={1.8} /></button>
       <button title="Rotate 90°" aria-label="Rotate 90 degrees" onClick={p.onRotate}><RotateCw size={16} strokeWidth={1.8} /></button>
       <button title="Duplicate" aria-label="Duplicate" onClick={p.onDuplicate}><Copy size={16} strokeWidth={1.8} /></button>
@@ -254,7 +277,7 @@ export default function FloorPlan(p: Props) {
       <button title="Delete" aria-label="Delete" className="danger" onClick={p.onDelete}><Trash2 size={16} strokeWidth={1.8} /></button>
     </div>}
     {dragging === 'resize' && tip && selected && <div className="resize-tip" style={{ left: tip.x + 14, top: tip.y - 34 }}>{Math.round(selected.width)} × {Math.round(selected.depth)} cm</div>}
-    <div className="plan-zoom"><button title="Zoom out" onClick={() => setZoom(z => Math.max(.5, z / 1.2))}>−</button><span>{Math.round(zoom * 100)}%</span><button title="Zoom in" onClick={() => setZoom(z => Math.min(3, z * 1.2))}>+</button><button title="Fit room" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }) }}>⌑</button></div>
-    <div className="plan-hint">{isGroup ? 'Grouped sofa · Ungroup in the sidebar to move sections' : coarse ? 'Drag to move · Pinch to zoom · Two fingers to pan' : 'Drag to move · Corners to resize · Scroll to zoom'}</div>
+    <div className="plan-zoom"><button title="Zoom out" aria-label="Zoom out" onClick={() => setZoom(z => Math.max(.5, z / 1.2))}>−</button><span>{Math.round(zoom * 100)}%</span><button title="Zoom in" aria-label="Zoom in" onClick={() => setZoom(z => Math.min(4, z * 1.2))}>+</button><button className="fit-room" title="Fit room" aria-label="Fit room" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }) }}>{p.mobile ? 'Fit Room' : '⌑'}</button></div>
+    <div className="plan-hint">{isGroup ? 'Grouped sofa · Ungroup in the sidebar to move sections' : p.mobile ? p.editMode === 'resize' ? 'Resize mode · Drag a corner handle' : 'Move mode · Drag furniture · Pinch to zoom' : coarse ? 'Drag to move · Pinch to zoom · Two fingers to pan' : 'Drag to move · Corners to resize · Scroll to zoom'}</div>
   </div>
 }

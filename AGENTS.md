@@ -27,8 +27,11 @@ same rules for Claude Code — keep both files in sync.
    data instead of resetting; imports add copies and never replace rooms.
 6. Maintain **centimeter-accurate 2D/3D geometry** (1 plan unit = 1 cm, 3D
    metres = cm / 100). Route all placement through `src/geometry.ts`.
-7. Keep **furniture manipulation consistent across devices** (select → floating
-   toolbar → properties sidebar / bottom sheet).
+7. Keep **furniture manipulation consistent across devices**. On mobile, selecting
+   furniture starts in Move mode; resize handles appear only in Resize mode so
+   small objects remain easy to drag. Keep Move, Resize, exact dimensions,
+   Rotate, Duplicate and Delete accessible without covering the plan. Preserve
+   desktop corner handles and keep Undo/Redo visible in the mobile toolbar.
 8. Ensure new features **work on GitHub Pages** (built with base `/roomform/`,
    live at https://mohammed-hossam11.github.io/roomform/).
 9. Avoid breaking **GitHub Pages asset paths**: no absolute `/…` asset URLs, no
@@ -44,6 +47,9 @@ same rules for Claude Code — keep both files in sync.
 - Develop with `npm run dev` (http://127.0.0.1:5173/).
 - Static check: `npx tsc --noEmit -p tsconfig.json`. The owner tests manually;
   do not run browser automation or builds unless asked.
+- For relevant changes, verify touch drag, deliberate resize, undo/redo, pinch,
+  pan, dialogs and 3D at phone/tablet sizes as well as desktop. Use isolated
+  browser storage during automation; never clear the owner's saved rooms.
 - Deployment is automatic via `.github/workflows/deploy.yml` on pushes to
   `main` (see "Publishing every change" below).
 

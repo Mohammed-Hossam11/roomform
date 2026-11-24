@@ -35,9 +35,11 @@ keep the two files in sync.
    `m = cm / 100` everywhere. All placement goes through `src/geometry.ts`
    (`clampInside`, `inside`, `areaFor`, `mountOnWall`, `fitOpenings`) — no
    ad-hoc boundary checks.
-7. **Keep furniture manipulation consistent across devices**: the same
-   select → floating toolbar (Edit size, Rotate, Duplicate, Delete) → sidebar /
-   bottom-sheet flow everywhere.
+7. **Keep furniture manipulation consistent across devices.** Mobile selection
+   starts in Move mode, with resize handles shown only in Resize mode so small
+   objects stay easy to drag. Keep Move, Resize, exact dimensions, Rotate,
+   Duplicate and Delete accessible without covering the plan. Preserve desktop
+   corner handles and keep Undo/Redo visible in the mobile toolbar.
 8. **Everything must work on GitHub Pages.** Production builds use the base
    path `/roomform/` (`vite.config.ts`); the live site is
    https://mohammed-hossam11.github.io/roomform/.
@@ -61,6 +63,9 @@ keep the two files in sync.
 - The user tests manually: do not run Playwright, browser automation, automated
   tests or `npm run build` unless asked. `npx tsc --noEmit -p tsconfig.json`
   is a safe static check.
+- When testing is requested, check touch drag, deliberate resize, undo/redo,
+  pinch, pan, dialogs and 3D on phones/tablets plus desktop. Automate in
+  isolated browser storage; never clear the owner's saved rooms.
 - Deployment: `.github/workflows/deploy.yml` builds and publishes on every push
   to `main` (see "Publishing every change" below).
 - Key files: `model.ts` (data + migration), `geometry.ts` (placement rules),
